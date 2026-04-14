@@ -92,25 +92,34 @@ export class ProjectController {
   }
 
   static async removeRepository(req: AuthRequest, res: Response) {
-    try {
-      const userId = req.user?.sub as string
-      const { id, repoId } = req.params
+  try {
+    const userId = req.user?.sub as string
+    const { id, repoId } = req.params
 
-      const project = await ProjectService.getProjectById(id, userId)
-      if (!project) {
-        res.status(404).json({ message: 'Project not found' })
-        return
-      }
-
-      const repo = await ProjectService.deleteRepository(id, repoId)
-      if (!repo) {
-        res.status(404).json({ message: 'Repository not found in this project' })
-        return
-      }
-
-      res.json({ message: 'Repository removed successfully' })
-    } catch (error: any) {
-      res.status(500).json({ message: 'Failed to remove repository', error: error.message })
+    const project = await ProjectService.getProjectById(id, userId)
+    if (!project) {
+      res.status(404).json({ message: 'Project not found' })
+      return
     }
+
+    // find repo first
+    const repo = project.repos.find(r => r._id.toString() === repoId)
+
+    if (!repo) {
+      res.status(404).json({ message: 'Repository not found in this project' })
+      return
+    }
+
+    // delete from github
+    await GithubService.deleteRepository(repo.repo_name)
+
+    // delete from DB
+    await ProjectService.deleteRepository(id, repoId)
+
+    res.json({ message: 'Repository removed successfully' })
+
+  } catch (error: any) {
+    res.status(500).json({ message: 'Failed to remove repository', error: error.message })
   }
+}
 }

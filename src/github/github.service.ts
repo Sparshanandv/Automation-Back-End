@@ -84,4 +84,26 @@ export class GithubService {
 
     return full_name
   }
+
+
+static async deleteRepository(fullName: string): Promise<void> {
+  const token = process.env.GITHUB_TOKEN
+  if (!token) throw new Error('GITHUB_TOKEN is not configured')
+
+  const response = await fetch(`https://api.github.com/repos/${fullName}`, {
+    method: 'DELETE',
+    headers: {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'Node.js',
+      Authorization: `Bearer ${token}`
+    }
+  })
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({
+    }))
+    throw new Error(`GitHub delete failed: ${response.statusText}`)
+  }
 }
+}
+
