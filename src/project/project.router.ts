@@ -8,5 +8,6 @@ router.post('/', ProjectController.createProject)
 router.get('/:id', ProjectController.getProject)
 router.post('/:id/repos', ProjectController.addRepository)
 router.delete('/:id/repos/:repoId', ProjectController.removeRepository)
+router.delete('/:id', ProjectController.deleteProject)
 
 export default router

@@ -128,5 +128,22 @@ export class ProjectController {
   } catch (error: any) {
     res.status(500).json({ message: 'Failed to remove repository', error: error.message })
   }
+
+  static async deleteProject(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.user?.sub as string
+      const { id } = req.params
+
+      const project = await ProjectService.deleteProject(id, userId)
+      if (!project) {
+        res.status(404).json({ message: 'Project not found' })
+        return
+      }
+
+      res.json({ message: 'Project deleted successfully' })
+    } catch (error: any) {
+      res.status(500).json({ message: 'Failed to delete project', error: error.message })
+    }
+  }
 }
 }
