@@ -4,6 +4,7 @@ import authRouter from '../auth/auth.router'
 import demoRouter from '../demo/demo.router'
 import featureRouter from '../feature/feature.router'
 import aiRouter from '../ai/ai.router'
+import projectRouter from '../project/project.router'
 
 interface RouteDefinition {
   path: string
@@ -16,6 +17,9 @@ const routes: RouteDefinition[] = [
   { path: '/demo',     router: demoRouter,    isPublic: false },
   { path: '/features', router: featureRouter, isPublic: false },
   { path: '/ai',       router: aiRouter,      isPublic: false },
+  { path: '/auth', router: authRouter, isPublic: true  },
+  { path: '/demo', router: demoRouter, isPublic: false },
+  { path: '/projects', router: projectRouter, isPublic: false },
 ]
 
 export function registerRoutes(app: Express) {
