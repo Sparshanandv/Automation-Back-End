@@ -87,3 +87,21 @@ export async function regenerateQaTestCases(featureId: string, promptToRegenerat
     const parsed = await callAi(prompt)
     return saveAndProgressFeature(feature, parsed)
 }
+
+export async function approveQaTestCases(featureId: string) {
+    const feature = await getValidatedFeature(featureId)
+
+    if (!isValidTransition(feature.status, FeatureStatusEnum.QA_APPROVED)) {
+        throw new HttpError(400, `Invalid transition from ${feature.status} to QA_APPROVED`)
+    }
+
+    feature.status = FeatureStatusEnum.QA_APPROVED
+    feature.statusHistory.push({
+        status: FeatureStatusEnum.QA_APPROVED,
+        changedBy: { id: 'system', email: 'system' },
+        changedAt: new Date(),
+    })
+
+    await feature.save()
+    return feature
+}
