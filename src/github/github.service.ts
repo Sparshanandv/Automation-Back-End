@@ -1,3 +1,5 @@
+import { HttpStatus } from '../common/constants/http-status'
+
 export class GithubService {
   /**
    * Validates if the GitHub token has access to the given repository.
@@ -14,7 +16,7 @@ export class GithubService {
       if (token) headers.Authorization = `Bearer ${token}`
 
       const response = await fetch(`https://api.github.com/repos/${repoName}`, { headers })
-      return response.status === 200
+      return response.status === HttpStatus.OK
     } catch (error) {
       console.error(`GitHub validation failed for repo: ${repoName}`, error)
       return false
@@ -49,7 +51,7 @@ export class GithubService {
 
     if (!response.ok) {
       const errorBody = await response.json() as any
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === HttpStatus.UNAUTHORIZED || response.status === HttpStatus.FORBIDDEN) {
         throw new Error('GitHub token does not have adequate permissions to create a repository.')
       }
       throw new Error(`Failed to create repository: ${errorBody.message || response.statusText}`)
