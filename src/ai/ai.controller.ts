@@ -17,11 +17,6 @@ export async function regenerateQa(req: Request, res: Response, next: NextFuncti
         const { featureId } = req.params
         const { promptToRegenerateQa } = req.body
 
-        if (!promptToRegenerateQa) {
-            res.status(400).json({ message: 'promptToRegenerateQa is required' })
-            return
-        }
-
         const result = await regenerateQaTestCases(featureId, promptToRegenerateQa)
         res.json(result)
     } catch (err) {

@@ -35,9 +35,14 @@ Return ONLY the JSON array.`
 export function buildQaRegenerationPrompt(
     feature: { title: string; description: string; criteria: string },
     previousContent: any,
-    promptToRegenerateQa: string
+    promptToRegenerateQa?: string
 ): string {
-    return `You are a senior QA engineer. You previously generated test cases for the feature below, but the user has provided feedback for regeneration.
+    const feedbackSection = promptToRegenerateQa
+        ? `USER FEEDBACK / REGENERATION PROMPT:
+"${promptToRegenerateQa}"`
+        : 'USER FEEDBACK: Please regenerate and improve the previous test cases.'
+
+    return `You are a senior QA engineer. You previously generated test cases for the feature below, but the user has requested a regeneration.
 
 FEATURE TITLE: ${feature.title}
 FEATURE DESCRIPTION: ${feature.description}
@@ -46,8 +51,7 @@ ACCEPTANCE CRITERIA: ${feature.criteria}
 PREVIOUS TEST CASES:
 ${JSON.stringify(previousContent, null, 2)}
 
-USER FEEDBACK / REGENERATION PROMPT:
-"${promptToRegenerateQa}"
+${feedbackSection}
 
 REVISE the test cases based ON THE FEEDBACK. 
 Maintain the same JSON structure. 

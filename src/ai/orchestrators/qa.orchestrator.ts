@@ -62,7 +62,7 @@ export async function generateQaTestCases(featureId: string) {
     return saveAndProgressFeature(feature, parsed)
 }
 
-export async function regenerateQaTestCases(featureId: string, promptToRegenerateQa: string) {
+export async function regenerateQaTestCases(featureId: string, promptToRegenerateQa?: string) {
     const feature = await getValidatedFeature(featureId)
 
     
