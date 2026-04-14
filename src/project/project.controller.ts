@@ -128,6 +128,7 @@ export class ProjectController {
   } catch (error: any) {
     res.status(500).json({ message: 'Failed to remove repository', error: error.message })
   }
+  }
 
   static async deleteProject(req: AuthRequest, res: Response) {
     try {
@@ -145,5 +146,4 @@ export class ProjectController {
       res.status(500).json({ message: 'Failed to delete project', error: error.message })
     }
   }
-}
 }
