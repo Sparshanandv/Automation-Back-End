@@ -38,5 +38,5 @@ export async function invoke(prompt: string): Promise<string> {
     const decoded = new TextDecoder().decode(response.body)
     const parsed = JSON.parse(decoded)
 
-    return parsed.content[0].text
+    return parsed?.content?.[0]?.text ?? ''
 }
