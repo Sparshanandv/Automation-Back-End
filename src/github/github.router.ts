@@ -31,4 +31,21 @@ router.post('/branches', async (req: Request, res: Response) => {
   }
 })
 
+// DELETE /api/github/branches?repo_name=owner/repo&branch_name=name
+router.delete('/branches', async (req: Request, res: Response) => {
+  try {
+    const { repo_name, branch_name } = req.query
+    if (!repo_name || typeof repo_name !== 'string') {
+      return res.status(400).json({ message: 'repo_name query parameter is required' })
+    }
+    if (!branch_name || typeof branch_name !== 'string') {
+      return res.status(400).json({ message: 'branch_name query parameter is required' })
+    }
+    await GithubService.deleteBranch(repo_name, branch_name)
+    res.json({ message: `Branch ${branch_name} deleted successfully` })
+  } catch (error: any) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
 export default router
