@@ -31,3 +31,38 @@ Cover:
 
 Return ONLY the JSON array.`
 }
+
+export function buildQaRegenerationPrompt(
+    feature: { title: string; description: string; criteria: string },
+    previousContent: any,
+    promptToRegenerateQa: string
+): string {
+    return `You are a senior QA engineer. You previously generated test cases for the feature below, but the user has provided feedback for regeneration.
+
+FEATURE TITLE: ${feature.title}
+FEATURE DESCRIPTION: ${feature.description}
+ACCEPTANCE CRITERIA: ${feature.criteria}
+
+PREVIOUS TEST CASES:
+${JSON.stringify(previousContent, null, 2)}
+
+USER FEEDBACK / REGENERATION PROMPT:
+"${promptToRegenerateQa}"
+
+REVISE the test cases based ON THE FEEDBACK. 
+Maintain the same JSON structure. 
+Return ONLY the raw JSON array. No explanation. No markdown. No code fences.
+
+Each element structure:
+{
+  "id": "TC-001",
+  "title": "Short test case title",
+  "steps": ["Step 1", "Step 2", "Step 3"],
+  "expected": "Expected result description",
+  "type": "functional | edge | negative"
+}
+
+The "type" field must be one of: "functional", "edge", or "negative".
+
+Return ONLY the JSON array.`
+}
