@@ -15,7 +15,7 @@ const routes: RouteDefinition[] = [
   { path: '/auth',     router: authRouter,    isPublic: true  },
   { path: '/demo',     router: demoRouter,    isPublic: false },
   { path: '/features', router: featureRouter, isPublic: false },
-  { path: '/ai',       router: aiRouter,      isPublic: true },
+  { path: '/ai',       router: aiRouter,      isPublic: false },
 ]
 
 export function registerRoutes(app: Express) {
