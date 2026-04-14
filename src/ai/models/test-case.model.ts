@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 
 const testCaseSchema = new mongoose.Schema(
     {
-        feature_id: { type: String, required: true },
+        feature_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Feature', required: true },
         content: { type: mongoose.Schema.Types.Mixed, required: true },
     },
     { timestamps: true }

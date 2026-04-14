@@ -1,6 +1,6 @@
 import { HttpError } from '../../common/errors/http-error'
 import { Feature } from '../../feature/feature.model'
-import { FeatureStateMachine } from '../../feature/feature.state-machine'
+import { isValidTransition } from '../../feature/feature.state-machine'
 import { TestCase } from '../models/test-case.model'
 import { buildQaPrompt } from '../prompts/qa.prompt'
 import * as bedrockClient from '../bedrock.client'
@@ -36,7 +36,14 @@ export async function generateQaTestCases(featureId: string) {
         { upsert: true, new: true, setDefaultsOnInsert: true }
     )
 
-    FeatureStateMachine.transition(feature, 'QA')
+    if (isValidTransition(feature.status, 'QA')) {
+        feature.status = 'QA'
+        feature.statusHistory.push({
+            status: 'QA',
+            changedBy: { id: 'system', email: 'system' },
+            changedAt: new Date(),
+        })
+    }
     await feature.save()
 
     return testCase
