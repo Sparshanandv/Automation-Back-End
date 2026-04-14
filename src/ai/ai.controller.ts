@@ -3,7 +3,6 @@ import { generateQaTestCases, regenerateQaTestCases, approveQaTestCases } from '
 
 export async function generateQa(req: Request, res: Response, next: NextFunction) {
     try {
-        console.log("hiit")
         const { featureId } = req.params
         const result = await generateQaTestCases(featureId)
         res.json(result)
