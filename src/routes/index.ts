@@ -3,6 +3,7 @@ import { authMiddleware } from '../common/middleware/auth.middleware'
 import authRouter from '../auth/auth.router'
 import demoRouter from '../demo/demo.router'
 import featureRouter from '../feature/feature.router'
+import aiRouter from '../ai/ai.router'
 
 interface RouteDefinition {
   path: string
@@ -14,6 +15,7 @@ const routes: RouteDefinition[] = [
   { path: '/auth',     router: authRouter,    isPublic: true  },
   { path: '/demo',     router: demoRouter,    isPublic: false },
   { path: '/features', router: featureRouter, isPublic: false },
+  { path: '/ai',       router: aiRouter,      isPublic: true },
 ]
 
 export function registerRoutes(app: Express) {
