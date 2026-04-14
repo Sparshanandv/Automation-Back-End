@@ -1,19 +1,19 @@
-import { FeatureStatus } from './feature.model'
+import { FeatureStatus, FeatureStatusEnum } from './feature.model'
 
 const NEXT_STATUS: Partial<Record<FeatureStatus, FeatureStatus>> = {
-  CREATED:      'QA',
-  QA:           'QA_APPROVED',
-  QA_APPROVED:  'DEV',
-  DEV:          'PLAN_APPROVED',
-  PLAN_APPROVED:'CODE_GEN',
-  CODE_GEN:     'PR_CREATED',
-  PR_CREATED:   'DONE',
+    [FeatureStatusEnum.CREATED]: FeatureStatusEnum.QA,
+    [FeatureStatusEnum.QA]: FeatureStatusEnum.QA_APPROVED,
+    [FeatureStatusEnum.QA_APPROVED]: FeatureStatusEnum.DEV,
+    [FeatureStatusEnum.DEV]: FeatureStatusEnum.PLAN_APPROVED,
+    [FeatureStatusEnum.PLAN_APPROVED]: FeatureStatusEnum.CODE_GEN,
+    [FeatureStatusEnum.CODE_GEN]: FeatureStatusEnum.PR_CREATED,
+    [FeatureStatusEnum.PR_CREATED]: FeatureStatusEnum.DONE,
 }
 
 export function isValidTransition(from: FeatureStatus, to: FeatureStatus): boolean {
-  return NEXT_STATUS[from] === to
+    return NEXT_STATUS[from] === to
 }
 
 export function getNextStatus(current: FeatureStatus): FeatureStatus | null {
-  return NEXT_STATUS[current] ?? null
+    return NEXT_STATUS[current] ?? null
 }

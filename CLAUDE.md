@@ -8,9 +8,9 @@ A Jira replacement that uses AI (Amazon Bedrock / Claude) + GitHub to automate t
 
 | Layer          | Technology                        |
 |----------------|-----------------------------------|
-| Frontend       | React + Redux Toolkit             |
-| Backend        | Node.js + Express (REST)          |
-| Database       | MongoDB (Mongoose)                |
+| Frontend       | React + NgRx                      |
+| Backend        | Node.js +Express (REST)           |
+| Database       | MongoDB (Mongoose)              |
 | AI             | Amazon Bedrock (Claude)           |
 | Infrastructure | AWS ECS, API Gateway, S3          |
 | Auth           | JWT (access + refresh tokens)     |
@@ -86,7 +86,9 @@ POST   /api/github/pr/:featureId
 **IN:** JWT auth, projects, repos, features, status pipeline, AI (QA/plan/code), chat, GitHub automation
 **OUT:** GitHub OAuth, team roles, notifications, analytics
 
-# Backend — Express + Mongoose
+# Backend — Express
+
+Shared context (stack, status flow, DB tables, API contract) is in ~/.claude/CLAUDE.md and loaded automatically.
 
 ---
 
