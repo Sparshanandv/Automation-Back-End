@@ -35,4 +35,12 @@ export class ProjectService {
     const repo = await Repository.findOneAndDelete({ _id: repoId, projectId })
     return repo
   }
+
+  static async deleteProject(projectId: string, userId: string) {
+    const project = await Project.findOneAndDelete({ _id: projectId, userId })
+    if (project) {
+      await Repository.deleteMany({ projectId })
+    }
+    return project
+  }
 }
