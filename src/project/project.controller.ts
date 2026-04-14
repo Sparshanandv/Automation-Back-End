@@ -51,7 +51,7 @@ export class ProjectController {
     try {
       const userId = req.user?.sub as string
       const { id } = req.params
-      const { repo_name, branch, purpose } = req.body
+      const { repo_name, branch, purpose, createNew, description, isPrivate } = req.body
 
       if (!repo_name || !branch || !purpose) {
         res.status(400).json({ message: 'repo_name, branch, and purpose are required' })
@@ -64,14 +64,27 @@ export class ProjectController {
         return
       }
 
-      // Validate GitHub repo access
-      const hasAccess = await GithubService.validateRepoAccess(repo_name)
-      if (!hasAccess) {
-        res.status(400).json({ message: `Cannot access GitHub repository: ${repo_name}. Ensure it is public or you have configured GITHUB_TOKEN properly.` })
-        return
+      let finalRepoName = repo_name;
+
+      if (createNew) {
+        // Create the new repository and optionally its branch via GitHub API
+        try {
+          finalRepoName = await GithubService.createRepository(repo_name, description || '', !!isPrivate, branch)
+        } catch (githubErr: any) {
+          res.status(400).json({ message: githubErr.message || 'Failed to create new repository on GitHub.' })
+          return
+        }
+      } else {
+        // Validate existing GitHub repo access
+        const hasAccess = await GithubService.validateRepoAccess(repo_name)
+        if (!hasAccess) {
+          res.status(400).json({ message: `Cannot access GitHub repository: ${repo_name}. Ensure it is public or you have configured GITHUB_TOKEN properly.` })
+          return
+        }
       }
 
-      const repo = await ProjectService.addRepository(id, repo_name, branch, purpose)
+      // Add to database
+      const repo = await ProjectService.addRepository(id, finalRepoName, branch, purpose)
       res.status(201).json(repo)
     } catch (error: any) {
       res.status(500).json({ message: 'Failed to add repository', error: error.message })
