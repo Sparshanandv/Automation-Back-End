@@ -1,4 +1,4 @@
-import { Feature, FeatureStatus } from './feature.model'
+import { Feature, FeatureStatus, FeatureStatusEnum } from './feature.model'
 import { isValidTransition } from './feature.state-machine'
 
 interface Actor {
@@ -12,8 +12,8 @@ export const featureService = {
       title,
       description,
       criteria,
-      status: 'CREATED',
-      statusHistory: [{ status: 'CREATED', changedBy: actor, changedAt: new Date() }],
+      status: FeatureStatusEnum.CREATED,
+      statusHistory: [{ status: FeatureStatusEnum.CREATED, changedBy: actor, changedAt: new Date() }],
     })
     return feature.save()
   },

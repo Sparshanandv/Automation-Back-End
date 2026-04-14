@@ -23,7 +23,7 @@ const getModelId = () => process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-son
 export async function invoke(prompt: string): Promise<string> {
     const body = JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31',
-        max_tokens: 4096,
+        max_tokens: 8192,
         messages: [{ role: 'user', content: prompt }],
     })
 
