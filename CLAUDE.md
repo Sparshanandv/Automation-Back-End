@@ -156,6 +156,18 @@ const routes: RouteDefinition[] = [
 
 ---
 
+## WHEN PROJECT MODULE IS ADDED
+
+The `feature` model already has an optional `projectId` field (ObjectId, default: null).
+When the project module is built, these changes are needed:
+
+1. **feature.service.ts** — add `listByProject(projectId: string)` filtering by `projectId`
+2. **feature.controller.ts** — update `listAll` to accept optional `?projectId` query param; delegate to `listByProject` when present
+3. **feature.model.ts** — no schema change needed, `projectId` is already there
+4. **feature.controller.ts `create`** — validate that `projectId` refers to a real project (call project service)
+
+---
+
 ## MODULES
 
 ### Auth Module
