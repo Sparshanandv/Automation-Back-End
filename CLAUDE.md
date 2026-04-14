@@ -9,10 +9,10 @@ A Jira replacement that uses AI (Amazon Bedrock / Claude) + GitHub to automate t
 | Layer          | Technology                        |
 |----------------|-----------------------------------|
 | Frontend       | React + NgRx                      |
-| Backend        | Node.js + NestJS (REST)           |
-| Database       | PostgreSQL (TypeORM)              |
+| Backend        | Node.js +Express (REST)           |
+| Database       | MongoDB (Mongoose)              |
 | AI             | Amazon Bedrock (Claude)           |
-| Infrastructure | AWS ECS, API Gateway, RDS, S3     |
+| Infrastructure | AWS ECS, API Gateway, S3          |
 | Auth           | JWT (access + refresh tokens)     |
 
 ---
@@ -35,49 +35,48 @@ CREATED → QA → QA_APPROVED → DEV → PLAN_APPROVED → CODE_GEN → PR_CRE
 
 ---
 
-## DATABASE TABLES
+## DATABASE COLLECTIONS
 
-| Table            | Key Fields                                           |
+| Collection       | Key Fields                                           |
 |------------------|------------------------------------------------------|
-| users            | id, email, password_hash, created_at                 |
-| projects         | id, user_id, name, description                       |
-| repositories     | id, project_id, repo_name, branch, purpose           |
-| features         | id, project_id, title, description, criteria, status |
-| test_cases       | id, feature_id, content (JSON)                       |
-| plans            | id, feature_id, content (JSON)                       |
-| code_generations | id, feature_id, files (JSON), s3_path                |
-| conversations    | id, feature_id, role, message, created_at            |
-| approvals        | id, feature_id, stage, approved_by, approved_at      |
+| users            | email, password_hash, createdAt                      |
+| projects         | userId, name, description, repositories[]            |
+| features         | projectId, title, description, criteria, status      |
+| testcases        | featureId, content (Mixed)                           |
+| plans            | featureId, content (Mixed)                           |
+| codegenerations  | featureId, files (Mixed), s3Path                     |
+| conversations    | featureId, role, message, createdAt                  |
+| approvals        | featureId, stage, approvedBy, approvedAt             |
 
 ---
 
 ## API CONTRACT
 
 ```
-POST   /auth/signup
-POST   /auth/login
-POST   /auth/refresh
+POST   /api/auth/signup
+POST   /api/auth/login
+POST   /api/auth/refresh
 
-POST   /projects
-GET    /projects
-GET    /projects/:id
-POST   /projects/:id/repos
-DELETE /projects/:id/repos/:repoId
+POST   /api/projects
+GET    /api/projects
+GET    /api/projects/:id
+POST   /api/projects/:id/repos
+DELETE /api/projects/:id/repos/:repoId
 
-POST   /features
-GET    /features/:id
-PUT    /features/:id
-PATCH  /features/:id/status
+POST   /api/features
+GET    /api/features/:id
+PUT    /api/features/:id
+PATCH  /api/features/:id/status
 
-POST   /ai/qa/generate/:featureId
-POST   /ai/plan/generate/:featureId
-POST   /ai/code/generate/:featureId
-POST   /ai/chat/:featureId
-GET    /ai/chat/:featureId/history
+POST   /api/ai/qa/generate/:featureId
+POST   /api/ai/plan/generate/:featureId
+POST   /api/ai/code/generate/:featureId
+POST   /api/ai/chat/:featureId
+GET    /api/ai/chat/:featureId/history
 
-POST   /github/branch/:featureId
-POST   /github/commit/:featureId
-POST   /github/pr/:featureId
+POST   /api/github/branch/:featureId
+POST   /api/github/commit/:featureId
+POST   /api/github/pr/:featureId
 ```
 
 ---
@@ -87,7 +86,7 @@ POST   /github/pr/:featureId
 **IN:** JWT auth, projects, repos, features, status pipeline, AI (QA/plan/code), chat, GitHub automation
 **OUT:** GitHub OAuth, team roles, notifications, analytics
 
-# Backend — NestJS
+# Backend — Express
 
 Shared context (stack, status flow, DB tables, API contract) is in ~/.claude/CLAUDE.md and loaded automatically.
 
@@ -98,71 +97,76 @@ Shared context (stack, status flow, DB tables, API contract) is in ~/.claude/CLA
 ```
 src/
 ├── auth/
-│   ├── auth.module.ts
-│   ├── auth.controller.ts
-│   ├── auth.service.ts
-│   ├── strategies/
-│   │   └── jwt.strategy.ts
-│   └── dto/
-│       ├── signup.dto.ts
-│       └── login.dto.ts
+│   ├── auth.controller.ts         ← request handlers (signup, login, refresh)
+│   ├── auth.router.ts             ← POST /auth/signup, /login, /refresh
+│   ├── auth.service.ts            ← bcrypt hash, JWT sign/verify
+│   └── user.model.ts              ← Mongoose User schema
 ├── project/
-│   ├── project.module.ts
 │   ├── project.controller.ts
+│   ├── project.router.ts
 │   ├── project.service.ts
-│   ├── entities/
-│   │   ├── project.entity.ts
-│   │   └── repository.entity.ts
-│   └── dto/
-│       ├── create-project.dto.ts
-│       └── add-repo.dto.ts
+│   └── project.model.ts           ← each module owns its model
 ├── feature/
-│   ├── feature.module.ts
 │   ├── feature.controller.ts
+│   ├── feature.router.ts
 │   ├── feature.service.ts
 │   ├── feature.state-machine.ts   ← status transition logic lives here
-│   ├── entities/
-│   │   ├── feature.entity.ts
-│   │   └── approval.entity.ts
-│   └── dto/
-│       ├── create-feature.dto.ts
-│       └── update-status.dto.ts
+│   └── feature.model.ts
 ├── ai/
-│   ├── ai.module.ts
 │   ├── ai.controller.ts
+│   ├── ai.router.ts
 │   ├── ai.service.ts
 │   ├── bedrock.client.ts          ← single centralized Bedrock client
 │   ├── orchestrators/
 │   │   ├── qa.orchestrator.ts
 │   │   ├── plan.orchestrator.ts
 │   │   └── codegen.orchestrator.ts
-│   ├── prompts/
-│   │   ├── qa.prompt.ts
-│   │   ├── plan.prompt.ts
-│   │   └── codegen.prompt.ts
-│   └── entities/
-│       ├── test-case.entity.ts
-│       ├── plan.entity.ts
-│       ├── code-generation.entity.ts
-│       └── conversation.entity.ts
+│   └── prompts/
+│       ├── qa.prompt.ts
+│       ├── plan.prompt.ts
+│       └── codegen.prompt.ts
 ├── github/
-│   ├── github.module.ts
 │   ├── github.controller.ts
+│   ├── github.router.ts
 │   ├── github.service.ts
 │   └── github.client.ts
 ├── common/
-│   ├── filters/
-│   │   └── http-exception.filter.ts
-│   ├── guards/
-│   │   └── jwt-auth.guard.ts
-│   ├── decorators/
-│   │   └── current-user.decorator.ts
-│   └── interceptors/
-│       └── logging.interceptor.ts
-├── database/
-│   └── migrations/
+│   └── middleware/
+│       ├── auth.middleware.ts     ← verifies Bearer token, attaches req.user
+│       ├── error.middleware.ts    ← global JSON error handler (registered last)
+│       └── notFound.middleware.ts ← JSON 404 for unknown routes
+├── routes/
+│   └── index.ts                   ← declarative route registry with isPublic flag
 └── main.ts
 ```
+
+---
+
+## ROUTE REGISTRY PATTERN
+
+All routes declared in `src/routes/index.ts` as a typed array:
+
+```typescript
+const routes: RouteDefinition[] = [
+  { path: '/auth',     router: authRouter,    isPublic: true  },
+  { path: '/projects', router: projectRouter, isPublic: false },
+]
+```
+
+- `isPublic: true` → mounted bare under `/api`
+- `isPublic: false` → `authMiddleware` injected automatically
+
+---
+
+## WHEN PROJECT MODULE IS ADDED
+
+The `feature` model already has an optional `projectId` field (ObjectId, default: null).
+When the project module is built, these changes are needed:
+
+1. **feature.service.ts** — add `listByProject(projectId: string)` filtering by `projectId`
+2. **feature.controller.ts** — update `listAll` to accept optional `?projectId` query param; delegate to `listByProject` when present
+3. **feature.model.ts** — no schema change needed, `projectId` is already there
+4. **feature.controller.ts `create`** — validate that `projectId` refers to a real project (call project service)
 
 ---
 
@@ -172,29 +176,25 @@ src/
 - JWT login/signup
 - bcrypt for password hashing (rounds: 10)
 - Returns: `{ access_token, refresh_token, user }`
-- JWT secret from `process.env.JWT_SECRET`
 - Access token expires in 15m, refresh token in 7d
 
 ### Project Module
 - CRUD projects scoped to authenticated user
-- Repos linked with `purpose` enum: `frontend | backend | infra`
-- A project can have multiple repos
+- Repos embedded in project document with `purpose` enum: `frontend | backend | infra`
 
 ### Feature Module
 - CRUD features linked to a project
 - Status managed by `feature.state-machine.ts` — no direct status updates
 - `PATCH /features/:id/status` validates transition then fires the appropriate trigger
-- Approved stages recorded in `approvals` table
 
 ### AI Module
 - All Bedrock calls go through `bedrock.client.ts` only
 - Each orchestrator calls `bedrock.client.ts`, never Bedrock SDK directly
 - Prompt templates in `/prompts/` — no inline prompts in services
-- All AI responses parsed and validated before saving to DB
 - Chat history fetched and injected into each prompt for context
 
 ### GitHub Module
-- Uses personal access token from project/repo config (no OAuth for MVP)
+- Uses personal access token from project/repo config
 - Operations are async — controller returns 202 immediately, job runs in background
 - Flow per feature: create branch → commit files → push → open PR
 
@@ -202,40 +202,22 @@ src/
 
 ## CODING RULES
 
-- One module per service. No cross-importing controllers.
-- All DB access via TypeORM repositories. No raw SQL.
-- All request bodies validated with `class-validator` DTOs.
-- Use `@CurrentUser()` decorator to get user from JWT in controllers.
+- Every module owns its Mongoose model — no shared `src/models/` folder.
+- All DB access via Mongoose models. No raw queries.
+- All request bodies validated in controllers before calling service.
+- Use `req.user` (attached by `authMiddleware`) to scope queries to the logged-in user.
 - All secrets via `process.env`. Never hardcoded.
-- Global exception filter handles all errors — no try/catch in controllers.
-- Log errors with context: module name, method, input summary.
+- All errors passed to `next(err)` — global `errorMiddleware` handles the response.
 - Status transitions must go through `FeatureStateMachine.transition()` — never `feature.status = x`.
-- GitHub operations must never block an API response — queue them.
+- GitHub operations must never block an API response — run async.
 - AI responses must be valid JSON before saving — throw if parsing fails.
-
----
-
-## ENVIRONMENT VARIABLES
-
-```
-DATABASE_URL=
-JWT_SECRET=
-JWT_REFRESH_SECRET=
-AWS_REGION=
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0
-S3_BUCKET=
-GITHUB_TOKEN=
-```
 
 ---
 
 ## KEY PATTERNS
 
-### Status Transition (always use this)
+### Status Transition
 ```typescript
-// feature.state-machine.ts
 const VALID_TRANSITIONS = {
   CREATED: ['QA'],
   QA: ['QA_APPROVED'],
@@ -244,20 +226,28 @@ const VALID_TRANSITIONS = {
   PLAN_APPROVED: ['CODE_GEN'],
   CODE_GEN: ['PR_CREATED'],
   PR_CREATED: ['DONE'],
-};
+}
 ```
 
-### Bedrock Client (always call through this)
+### Bedrock Client
 ```typescript
-// bedrock.client.ts
 async invoke(prompt: string): Promise<string>
 async invokeStream(prompt: string): AsyncGenerator<string>
 ```
 
-### AI Response Validation (always validate before save)
-```typescript
-// parse → validate → save
-const raw = await this.bedrock.invoke(prompt);
-const parsed = JSON.parse(raw); // throw if invalid
-// then save to DB
+---
+
+## ENVIRONMENT VARIABLES
+
+```
+PORT=3000
+MONGO_URI=mongodb://localhost:27017/automation
+JWT_SECRET=
+JWT_REFRESH_SECRET=
+AWS_REGION=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0
+S3_BUCKET=
+GITHUB_TOKEN=
 ```
