@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express'
 import { AuthRequest } from '../common/middleware/auth.middleware'
 import { featureService } from './feature.service'
+import { HttpStatus } from '../common/constants/http-status'
 import { FeatureStatus } from './feature.model'
 
 export const featureController = {
@@ -8,11 +9,11 @@ export const featureController = {
     try {
       const { title, description, criteria } = req.body
       if (!title || !description || !criteria) {
-        return res.status(400).json({ message: 'title, description, and criteria are required' })
+        return res.status(HttpStatus.BAD_REQUEST).json({ message: 'title, description, and criteria are required' })
       }
       const actor = { id: req.user!.sub, email: req.user!.email }
       const feature = await featureService.create(title, description, criteria, actor)
-      res.status(201).json(feature)
+      res.status(HttpStatus.CREATED).json(feature)
     } catch (err) {
       next(err)
     }
@@ -39,7 +40,7 @@ export const featureController = {
   async updateStatus(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { status } = req.body
-      if (!status) return res.status(400).json({ message: 'status is required' })
+      if (!status) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'status is required' })
       const actor = { id: req.user!.sub, email: req.user!.email }
       const feature = await featureService.updateStatus(req.params.id, status as FeatureStatus, actor)
       res.json(feature)
