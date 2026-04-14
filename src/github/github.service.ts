@@ -86,24 +86,117 @@ export class GithubService {
   }
 
 
-static async deleteRepository(fullName: string): Promise<void> {
-  const token = process.env.GITHUB_TOKEN
-  if (!token) throw new Error('GITHUB_TOKEN is not configured')
+  /**
+   * Fetches all branches for a given repository.
+   * @param repoName - e.g. "owner/repo"
+   */
+  static async getBranches(repoName: string): Promise<string[]> {
+    const token = process.env.GITHUB_TOKEN
+    if (!token) throw new Error('GITHUB_TOKEN is not configured.')
 
-  const response = await fetch(`https://api.github.com/repos/${fullName}`, {
-    method: 'DELETE',
-    headers: {
+    const headers: Record<string, string> = {
       Accept: 'application/vnd.github.v3+json',
       'User-Agent': 'Node.js',
       Authorization: `Bearer ${token}`
     }
-  })
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({
-    }))
-    throw new Error(`GitHub delete failed: ${response.statusText}`)
+    const response = await fetch(`https://api.github.com/repos/${repoName}/branches`, { headers })
+    
+    if (!response.ok) {
+      const errorBody = await response.json() as any
+      throw new Error(`Failed to fetch branches: ${errorBody.message || response.statusText}`)
+    }
+
+    const branches = await response.json() as any[]
+    return branches.map(b => b.name)
   }
-}
+
+  /**
+   * Creates a new branch from a parent branch.
+   * @param repoName - e.g. "owner/repo"
+   * @param newBranch - Name of the new branch
+   * @param fromBranch - Base branch name
+   */
+  static async createBranch(repoName: string, newBranch: string, fromBranch: string): Promise<void> {
+    const token = process.env.GITHUB_TOKEN
+    if (!token) throw new Error('GITHUB_TOKEN is not configured.')
+
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'Node.js',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+
+    // 1. Get the SHA of the parent branch
+    const refResponse = await fetch(`https://api.github.com/repos/${repoName}/git/refs/heads/${fromBranch}`, { headers })
+    if (!refResponse.ok) {
+      const errorBody = await refResponse.json() as any
+      throw new Error(`Failed to fetch base branch reference: ${errorBody.message || refResponse.statusText}`)
+    }
+    const refData = await refResponse.json() as any
+    const sha = refData.object.sha
+
+    // 2. Create the new reference
+    const createRefResponse = await fetch(`https://api.github.com/repos/${repoName}/git/refs`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        ref: `refs/heads/${newBranch}`,
+        sha
+      })
+    })
+
+    if (!createRefResponse.ok) {
+      const errorBody = await createRefResponse.json() as any
+      throw new Error(`Failed to create branch: ${errorBody.message || createRefResponse.statusText}`)
+    }
+  }
+
+
+  static async deleteRepository(fullName: string): Promise<void> {
+    const token = process.env.GITHUB_TOKEN
+    if (!token) throw new Error('GITHUB_TOKEN is not configured')
+
+    const response = await fetch(`https://api.github.com/repos/${fullName}`, {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/vnd.github.v3+json',
+        'User-Agent': 'Node.js',
+        Authorization: `Bearer ${token}`
+      }
+    })
+
+    if (!response.ok) {
+      throw new Error(`GitHub delete failed: ${response.statusText}`)
+    }
+  }
+
+  /**
+   * Deletes a branch from a repository.
+   * @param repoName - e.g. "owner/repo"
+   * @param branchName - Name of the branch to delete
+   */
+  static async deleteBranch(repoName: string, branchName: string): Promise<void> {
+    const token = process.env.GITHUB_TOKEN
+    if (!token) throw new Error('GITHUB_TOKEN is not configured.')
+
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'Node.js',
+      Authorization: `Bearer ${token}`
+    }
+
+    const response = await fetch(`https://api.github.com/repos/${repoName}/git/refs/heads/${branchName}`, {
+      method: 'DELETE',
+      headers
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({})) as any
+      throw new Error(`Failed to delete branch: ${errorBody.message || response.statusText}`)
+    }
+  }
+  
 }
 
