@@ -25,6 +25,21 @@ export class ProjectController {
         res.status(HttpStatus.NOT_FOUND).json({ message: 'Project not found' })
         return
       }
+
+      // Verify each repository against GitHub
+      // If a repository was deleted directly on GitHub, we remove it from our DB.
+      const validRepos = []
+      for (const repo of project.repos) {
+        const hasAccess = await GithubService.validateRepoAccess(repo.repo_name)
+        if (hasAccess) {
+          validRepos.push(repo)
+        } else {
+          // Clean up orphaned repository from database
+          await ProjectService.deleteRepository(id, repo._id.toString())
+        }
+      }
+      project.repos = validRepos
+
       res.json(project)
     } catch (error: any) {
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Failed to get project', error: error.message })
