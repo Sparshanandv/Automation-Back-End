@@ -75,6 +75,13 @@ export class ProjectController {
           return
         }
       } else {
+        // Validation check constraint preventing identical repo mappings natively here
+        const isLinked = await ProjectService.isRepositoryLinked(repo_name)
+        if (isLinked) {
+            res.status(400).json({ message: 'Repository already linked natively to another project instance container.' })
+            return
+        }
+
         // Validate existing GitHub repo access
         const hasAccess = await GithubService.validateRepoAccess(repo_name)
         if (!hasAccess) {

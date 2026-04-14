@@ -35,4 +35,9 @@ export class ProjectService {
     const repo = await Repository.findOneAndDelete({ _id: repoId, projectId })
     return repo
   }
+
+  static async isRepositoryLinked(repo_name: string) {
+    const repo = await Repository.findOne({ repo_name })
+    return !!repo
+  }
 }
