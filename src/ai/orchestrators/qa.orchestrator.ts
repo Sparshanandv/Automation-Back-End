@@ -4,13 +4,15 @@ import { isValidTransition } from '../../feature/feature.state-machine'
 import { TestCase } from '../models/test-case.model'
 import { buildQaPrompt, buildQaRegenerationPrompt } from '../prompts/qa.prompt'
 import * as bedrockClient from '../bedrock.client'
+import { parseAiJson } from '../ai.utils'
 
 
 async function callAi(prompt: string): Promise<any> {
     const raw = await bedrockClient.invoke(prompt)
     try {
-        return JSON.parse(raw)
-    } catch {
+        return parseAiJson(raw)
+    } catch (err) {
+        console.error('AI returned invalid JSON:', raw)
         throw new HttpError(400, 'AI returned invalid JSON')
     }
 }
