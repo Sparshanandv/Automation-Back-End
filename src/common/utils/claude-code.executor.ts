@@ -1,0 +1,111 @@
+import { executeLocalCommand, CommandOptions } from './local-command.executor'
+
+export interface ClaudeCodeResult {
+    result: unknown
+    sessionId: string
+}
+
+export interface ClaudeCodeOptions {
+    cwd?: string
+    timeoutMs?: number
+}
+
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
+
+/**
+ * Run Claude Code CLI in headless mode and return the parsed JSON result.
+ *
+ * Requires `claude` to be installed globally:
+ *   npm install -g @anthropic-ai/claude-code
+ */
+export async function runClaudeCode(
+    prompt: string,
+    options: ClaudeCodeOptions = {}
+): Promise<ClaudeCodeResult> {
+    const { cwd, timeoutMs = DEFAULT_TIMEOUT_MS } = options
+
+    // Escape the prompt for shell safety by using single-quoted heredoc-style
+    const escapedPrompt = prompt.replace(/'/g, "'\\''")
+
+    const command = [
+        'claude',
+        '-p',
+        `'${escapedPrompt}'`,
+        '--output-format', 'json',
+        '--dangerously-skip-permissions',
+    ].join(' ')
+
+    // If ANTHROPIC_API_KEY is set, pass it along; otherwise Claude CLI
+    // uses its own stored credentials from `claude login`.
+    const env: Record<string, string> = {}
+    if (process.env.ANTHROPIC_API_KEY) {
+        env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
+    }
+
+    const cmdOptions: CommandOptions = {
+        cwd,
+        timeoutMs,
+        env,
+    }
+
+    const { stdout, stderr, exitCode } = await executeLocalCommand(command, cmdOptions)
+
+    if (exitCode !== 0) {
+        throw new Error(
+            `Claude Code exited with code ${exitCode}.\nstderr: ${stderr}\nstdout (last 500 chars): ${stdout.slice(-500)}`
+        )
+    }
+
+    // Claude may emit log lines before the actual JSON object.
+    // Find the first '{' or '[' that starts a valid JSON block.
+    const parsed = extractJson(stdout)
+
+    return {
+        result: parsed.data,
+        sessionId: parsed.sessionId,
+    }
+}
+
+/**
+ * Extract a JSON object from Claude Code's stdout, which may contain
+ * leading log/diagnostic lines before the actual JSON payload.
+ */
+function extractJson(raw: string): { data: unknown; sessionId: string } {
+    // Claude --output-format json wraps output in a JSON structure that
+    // contains a "result" field and a "session_id" field.
+    // Try parsing the entire stdout first.
+    try {
+        const full = JSON.parse(raw)
+        return {
+            data: full.result ?? full,
+            sessionId: full.session_id ?? '',
+        }
+    } catch {
+        // Fallback: find the first line that starts with '{' or '['
+    }
+
+    const lines = raw.split('\n')
+    let jsonStartIndex = -1
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trimStart()
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            jsonStartIndex = i
+            break
+        }
+    }
+
+    if (jsonStartIndex === -1) {
+        throw new Error(`No JSON found in Claude Code output. Raw output (last 1000 chars): ${raw.slice(-1000)}`)
+    }
+
+    const jsonString = lines.slice(jsonStartIndex).join('\n')
+    try {
+        const parsed = JSON.parse(jsonString)
+        return {
+            data: parsed.result ?? parsed,
+            sessionId: parsed.session_id ?? '',
+        }
+    } catch {
+        throw new Error(`Failed to parse JSON from Claude Code output. Extracted: ${jsonString.slice(0, 500)}`)
+    }
+}
