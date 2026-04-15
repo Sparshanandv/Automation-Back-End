@@ -15,7 +15,6 @@ export async function generateQa(req: Request, res: Response, next: NextFunction
     }
 }
 
-<<<<<<< HEAD
 export async function getQaResults(req: Request, res: Response, next: NextFunction) {
     try {
         const { featureId } = req.params

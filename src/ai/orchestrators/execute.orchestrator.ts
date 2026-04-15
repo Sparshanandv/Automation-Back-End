@@ -1,7 +1,7 @@
 import { HttpError } from '../../common/errors/http-error'
 import { Feature } from '../../feature/feature.model'
 import { runClaudeCode } from '../../common/utils/claude-code.executor'
-// import { Plan } from '../../plan/plan.model'
+import { Plan } from '../../plan/plan.model'
 
 export async function executeFeatureImplementation(featureId: string) {
     const feature = await Feature.findById(featureId)
@@ -10,7 +10,7 @@ export async function executeFeatureImplementation(featureId: string) {
     }
 
     // const plan = await Plan.findOne({ feature_id: featureId })
-    const plan=''
+    const plan= await Plan.findOne({ feature_id: featureId })
     if (!plan) {
         throw new HttpError(404, 'Plan not found for this feature')
     }
@@ -22,7 +22,7 @@ export async function executeFeatureImplementation(featureId: string) {
 
     const prompt = buildPrompt({
         featureTitle: feature.title as string,
-        planContent: '',
+        planContent: plan?.content,
     })
 
     const { result, sessionId } = await runClaudeCode(prompt, { cwd: repoPath })
