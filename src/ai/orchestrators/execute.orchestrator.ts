@@ -1,7 +1,7 @@
 import { HttpError } from '../../common/errors/http-error'
 import { Feature } from '../../feature/feature.model'
 import { runClaudeCode } from '../../common/utils/claude-code.executor'
-import { Plan } from '../../plan/plan.model'
+import { Plan } from '../models/plan.model'
 
 export async function executeFeatureImplementation(featureId: string) {
     const feature = await Feature.findById(featureId)
