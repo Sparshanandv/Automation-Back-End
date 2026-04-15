@@ -70,7 +70,7 @@ export async function generateDevPlan(
     // Convert result to string if it's not already
     const planText = typeof planResult === 'string' ? planResult : JSON.stringify(planResult)
 
-    await Plan.findOneAndUpdate(
+   const plan = await Plan.findOneAndUpdate(
         { feature_id: featureId },
         {
             feature_id: featureId,
@@ -89,7 +89,8 @@ export async function generateDevPlan(
         })
         await feature.save()
     }
-
+    console.log("plan objext________",plan)
+    console.log("plan text__________________",planText)
     return planText
 }
 

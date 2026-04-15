@@ -27,11 +27,53 @@ export async function executeFeatureImplementation(featureId: string) {
 
     const { result, sessionId } = await runClaudeCode(prompt, { cwd: repoPath })
 
+    // Parse result if it's a JSON string
+    let parsedResult = result
+    if (typeof result === 'string') {
+        try {
+            // Try to extract JSON from markdown code fences or other formatting
+            parsedResult = extractJsonFromString(result)
+        } catch (err) {
+            throw new HttpError(500, `Failed to parse Claude Code result as JSON: ${err instanceof Error ? err.message : 'Unknown error'}. Raw result: ${result.slice(0, 200)}`)
+        }
+    }
     return {
         featureId,
         sessionId,
-        result,
+        result: parsedResult,
     }
+}
+
+function extractJsonFromString(raw: string): unknown {
+    // First, try direct JSON parse
+    try {
+        return JSON.parse(raw)
+    } catch {
+        // Continue to extraction methods
+    }
+
+    // Try to extract JSON from markdown code fences (```json ... ```)
+    const codeBlockMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+    if (codeBlockMatch) {
+        try {
+            return JSON.parse(codeBlockMatch[1].trim())
+        } catch {
+            // Continue to next method
+        }
+    }
+
+    // Try to find JSON object between curly braces
+    const jsonObjectMatch = raw.match(/\{[\s\S]*\}/)
+    if (jsonObjectMatch) {
+        try {
+            return JSON.parse(jsonObjectMatch[0])
+        } catch {
+            // Continue to next method
+        }
+    }
+
+    // If all else fails, throw error with sample of what we received
+    throw new Error(`Could not extract valid JSON from string. Preview: ${raw.slice(0, 300)}`)
 }
 
 function buildPrompt(input: { featureTitle: string; planContent: unknown }): string {
