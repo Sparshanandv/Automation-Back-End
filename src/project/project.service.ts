@@ -14,7 +14,17 @@ export class ProjectService {
     return { ...project.toObject(), repos }
   }
 
-  static async createProject(userId: string, name: string, description?: string, githubToken?: string, createdByEmail?: string) {
+static async createProject(userId: string, name: string, description?: string, githubToken?: string, createdByEmail?: string) {
+    
+    const baseKey = name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase().padEnd(4, 'X')
+    let projectKey = baseKey
+    let counter = 1
+
+    while (await Project.findOne({ projectKey })) {
+      projectKey = `${baseKey}${counter}`
+      counter++
+    }
+
     const project = new Project({ name, description, userId, githubToken, createdByEmail })
     await project.save()
     return project

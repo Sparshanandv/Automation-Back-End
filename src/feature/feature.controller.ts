@@ -1,14 +1,14 @@
-import { Response, NextFunction } from "express";
-import { AuthRequest } from "../common/middleware/auth.middleware";
-import { featureService } from "./feature.service";
-import { HttpStatus } from "../common/constants/http-status";
-import { FeatureStatus } from "./feature.model";
-import { ProjectService } from "../project/project.service";
+import { Response, NextFunction } from 'express'
+import { AuthRequest } from '../common/middleware/auth.middleware'
+import { featureService } from './feature.service'
+import { HttpStatus } from '../common/constants/http-status'
+import { FeatureStatus, FEATURE_TYPES } from './feature.model'
+import { ProjectService } from '../project/project.service'
 
 export const featureController = {
   async create(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { title, description, criteria, projectId } = req.body;
+      const { title, description, criteria, projectId, type } = req.body
       if (!title || !description || !criteria) {
         return res
           .status(HttpStatus.BAD_REQUEST)
@@ -20,15 +20,9 @@ export const featureController = {
           return res.status(404).json({ message: "Project not found" });
         }
       }
-      const actor = { id: req.user!.sub, email: req.user!.email };
-      const feature = await featureService.create(
-        title,
-        description,
-        criteria,
-        actor,
-        projectId,
-      );
-      res.status(HttpStatus.CREATED).json(feature);
+      const actor = { id: req.user!.sub, email: req.user!.email }
+      const feature = await featureService.create(title, description, criteria, actor, type || 'task', projectId)
+      res.status(HttpStatus.CREATED).json(feature)
     } catch (err) {
       next(err);
     }
@@ -106,4 +100,14 @@ export const featureController = {
       next(err);
     }
   },
+
+  async getTypes(_req: AuthRequest, res: Response) {
+    try {
+      res.json(FEATURE_TYPES)
+    } catch (error: any) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Failed to get feature types', error: error.message })
+    }
+  }
 };
+
+
