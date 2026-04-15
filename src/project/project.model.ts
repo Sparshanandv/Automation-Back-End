@@ -15,6 +15,8 @@ const projectSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     description: { type: String, trim: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    githubToken: { type: String, trim: true },
+    createdByEmail: { type: String, trim: true },
   },
   { timestamps: true }
 )
