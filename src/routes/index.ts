@@ -4,7 +4,6 @@ import authRouter from '../auth/auth.router'
 import demoRouter from '../demo/demo.router'
 import featureRouter from '../feature/feature.router'
 import aiRouter from '../ai/ai.router'
-import helloRouter from '../hello/hello.router'
 
 interface RouteDefinition {
   path: string
