@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { approveQaTestCases, generateQaTestCases, regenerateQaTestCases } from './orchestrators/qa.orchestrator'
 import { generateDevPlan } from './orchestrators/plan.orchestrator'
+import { executeFeatureImplementation } from './orchestrators/execute.orchestrator'
 import { TestCase } from './models/test-case.model'
 import { Plan } from './models/plan.model'
 
@@ -14,6 +15,7 @@ export async function generateQa(req: Request, res: Response, next: NextFunction
     }
 }
 
+<<<<<<< HEAD
 export async function getQaResults(req: Request, res: Response, next: NextFunction) {
     try {
         const { featureId } = req.params
@@ -73,6 +75,16 @@ export async function approveQa(req: Request, res: Response, next: NextFunction)
     try {
         const { featureId } = req.params
         const result = await approveQaTestCases(featureId)
+        res.json(result)
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function executeFeature(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { featureId } = req.params
+        const result = await executeFeatureImplementation(featureId)
         res.json(result)
     } catch (err) {
         next(err)
