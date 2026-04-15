@@ -19,7 +19,7 @@ const routes: RouteDefinition[] = [
   { path: '/projects', router: projectRouter, isPublic: false },
   { path: '/github',   router: githubRouter,  isPublic: false },
   { path: '/features', router: featureRouter, isPublic: false },
-  { path: '/ai',       router: aiRouter,      isPublic: false },
+  { path: '/ai',       router: aiRouter,      isPublic: true },
 ]
 
 export function registerRoutes(app: Express) {
