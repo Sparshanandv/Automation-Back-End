@@ -6,6 +6,7 @@ import { TestCase } from './models/test-case.model'
 import { AuthRequest } from '../common/middleware/auth.middleware'
 import { HttpError } from '../common/errors/http-error'
 import { Plan } from './models/plan.model'
+import { CodeGeneration } from './models/code-generation.model'
 
 export async function generateQa(req: AuthRequest, res: Response, next: NextFunction) {
     try {
@@ -76,6 +77,25 @@ export async function executeFeature(req: Request, res: Response, next: NextFunc
         const { featureId } = req.params
         const result = await executeFeatureImplementation(featureId)
         res.json(result)
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function getCodeGeneration(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { featureId } = req.params
+        const codeGen = await CodeGeneration.findOne({ feature_id: featureId })
+
+        if (!codeGen) {
+            return res.status(404).json({ message: 'No code generation found for this feature' })
+        }
+
+        res.json({
+            featureId: codeGen.feature_id,
+            sessionId: codeGen.sessionId,
+            result: codeGen.result,
+        })
     } catch (err) {
         next(err)
     }

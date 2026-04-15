@@ -2,6 +2,8 @@ import { HttpError } from '../../common/errors/http-error'
 import { Feature } from '../../feature/feature.model'
 import { runClaudeCode } from '../../common/utils/claude-code.executor'
 import { Plan } from '../models/plan.model'
+import { CodeGeneration } from '../models/code-generation.model'
+import { Project } from '../../project/project.model'
 
 export async function executeFeatureImplementation(featureId: string) {
     const feature = await Feature.findById(featureId)
@@ -9,8 +11,17 @@ export async function executeFeatureImplementation(featureId: string) {
         throw new HttpError(404, 'Feature not found')
     }
 
-    // const plan = await Plan.findOne({ feature_id: featureId })
-    const plan= await Plan.findOne({ feature_id: featureId })
+    // Check if code generation already exists
+    const existingCodeGen = await CodeGeneration.findOne({ feature_id: featureId })
+    if (existingCodeGen) {
+        return {
+            featureId,
+            sessionId: existingCodeGen.sessionId,
+            result: existingCodeGen.result,
+        }
+    }
+
+    const plan = await Plan.findOne({ feature_id: featureId })
     if (!plan) {
         throw new HttpError(404, 'Plan not found for this feature')
     }
@@ -25,7 +36,18 @@ export async function executeFeatureImplementation(featureId: string) {
         planContent: plan?.content,
     })
 
-    const { result, sessionId } = await runClaudeCode(prompt, { cwd: repoPath })
+    // Get project name for branch creation
+    const project = feature.projectId
+        ? await Project.findById(feature.projectId)
+        : null
+    const projectName = project?.name || 'automation'
+    const featureTitle = feature.title || 'feature'
+
+    const { result, sessionId } = await runClaudeCode(prompt, {
+        cwd: repoPath,
+        projectName,
+        featureTitle
+    })
 
     // Parse result if it's a JSON string
     let parsedResult = result
@@ -37,6 +59,20 @@ export async function executeFeatureImplementation(featureId: string) {
             throw new HttpError(500, `Failed to parse Claude Code result as JSON: ${err instanceof Error ? err.message : 'Unknown error'}. Raw result: ${result.slice(0, 200)}`)
         }
     }
+
+    // Save to database
+    await CodeGeneration.findOneAndUpdate(
+        { feature_id: featureId },
+        {
+            feature_id: featureId,
+            result: parsedResult,
+            sessionId: sessionId,
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+    )
+
+    console.log('parsedResult',parsedResult);
+
     return {
         featureId,
         sessionId,

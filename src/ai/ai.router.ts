@@ -8,7 +8,8 @@ import {
   rejectPlanController,
   regenerateQa,
   approveQa,
-  executeFeature
+  executeFeature,
+  getCodeGeneration
 } from './ai.controller'
 
 const router = Router()
@@ -27,5 +28,6 @@ router.post('/plan/reject/:featureId', rejectPlanController)
 
 // Execution Routes
 router.post('/execute/:featureId', executeFeature)
+router.get('/execute/:featureId', getCodeGeneration)
 
 export default router
