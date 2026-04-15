@@ -4,6 +4,7 @@ import { TestCase } from '../models/test-case.model'
 import { Plan } from '../models/plan.model'
 import { buildPlanPrompt } from '../prompts/plan.prompt'
 import * as bedrockClient from '../bedrock.client'
+import { parseAiJson } from '../ai.utils'
 
 export async function generateDevPlan(featureId: string, refinement?: string) {
     const feature = await Feature.findById(featureId)
@@ -11,7 +12,6 @@ export async function generateDevPlan(featureId: string, refinement?: string) {
         throw new HttpError(404, 'Feature not found')
     }
 
-    //INFO: Must be in QA_APPROVED or DEV status to generate/regenerate plan
     const allowed: FeatureStatus[] = [FeatureStatusEnum.QA_APPROVED, FeatureStatusEnum.DEV]
     if (!allowed.includes(feature.status)) {
         throw new HttpError(400, `Feature status must be QA_APPROVED or DEV to generate a plan. Current: ${feature.status}`)
@@ -43,13 +43,9 @@ export async function generateDevPlan(featureId: string, refinement?: string) {
         })
     }
 
-    // Strip markdown code fences if present
-    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/)
-    if (fenceMatch) raw = fenceMatch[1].trim()
-
     let parsed: any
     try {
-        parsed = JSON.parse(raw)
+        parsed = parseAiJson(raw)
     } catch {
         // Fallback for demo if AI output is not perfect JSON
         parsed = { plan: raw }
