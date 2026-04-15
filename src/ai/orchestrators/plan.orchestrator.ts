@@ -4,6 +4,7 @@ import { runClaudeCode } from '../../common/utils/claude-code.executor'
 import { Feature, FeatureStatusEnum } from '../../feature/feature.model'
 import { isValidTransition, isValidRejection } from '../../feature/feature.state-machine'
 import { Plan } from '../models/plan.model'
+import { TestCase } from '../models/test-case.model'
 import { buildPlanPrompt } from '../prompts/plan.prompt'
 
 const TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
@@ -29,7 +30,15 @@ export async function generateDevPlan(
         )
     }
 
-    const prompt = buildPlanPrompt(input)
+    // Fetch test cases from database instead of using request body
+    const testCaseDoc = await TestCase.findOne({ feature_id: featureId })
+    const testCases = testCaseDoc?.content || []
+
+    // Use fetched test cases from DB, not the ones from request body
+    const prompt = buildPlanPrompt({
+        ...input,
+        testCases: testCases
+    })
 
     // Resolve monorepo root: works from both ts-node (src/) and compiled (dist/) contexts
     const projectRoot = process.env.PROJECT_ROOT ?? path.resolve(__dirname, '../../../..')
