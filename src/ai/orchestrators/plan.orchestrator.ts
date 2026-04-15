@@ -1,81 +1,140 @@
+import path from 'path'
 import { HttpError } from '../../common/errors/http-error'
-import { Feature, FeatureStatus, FeatureStatusEnum } from '../../feature/feature.model'
-import { TestCase } from '../models/test-case.model'
+import { runClaudeCode } from '../../common/utils/claude-code.executor'
+import { Feature, FeatureStatusEnum } from '../../feature/feature.model'
+import { isValidTransition, isValidRejection } from '../../feature/feature.state-machine'
 import { Plan } from '../models/plan.model'
 import { buildPlanPrompt } from '../prompts/plan.prompt'
-import * as bedrockClient from '../bedrock.client'
 
-export async function generateDevPlan(featureId: string, refinement?: string) {
+const TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
+
+interface Actor {
+    id: string
+    email: string
+}
+
+// ─── Generate ──────────────────────────────────────────────────────────────────
+
+export async function generateDevPlan(
+    featureId: string,
+    input: { testCases: unknown[]; userStory: string; optionalPrompt?: string }
+): Promise<string> {
     const feature = await Feature.findById(featureId)
-    if (!feature) {
-        throw new HttpError(404, 'Feature not found')
+    if (!feature) throw new HttpError(404, 'Feature not found')
+
+    if (feature.status !== FeatureStatusEnum.QA_APPROVED) {
+        throw new HttpError(
+            400,
+            `Feature must be in QA_APPROVED status to generate a dev plan. Current status: ${feature.status}`
+        )
     }
 
-    //INFO: Must be in QA_APPROVED or DEV status to generate/regenerate plan
-    const allowed: FeatureStatus[] = [FeatureStatusEnum.QA_APPROVED, FeatureStatusEnum.DEV]
-    if (!allowed.includes(feature.status)) {
-        throw new HttpError(400, `Feature status must be QA_APPROVED or DEV to generate a plan. Current: ${feature.status}`)
-    }
+    const prompt = buildPlanPrompt(input)
 
-    const testCaseResult = await TestCase.findOne({ feature_id: featureId })
-    const testCases = testCaseResult ? testCaseResult.content : [
-        { id: "TC-1", description: "Verify user can login with valid credentials" },
-        { id: "TC-2", description: "Verify error message on invalid password" },
-        { id: "TC-3", description: "Verify authentication token is stored in localStorage" }
-    ]
+    // Resolve monorepo root: works from both ts-node (src/) and compiled (dist/) contexts
+    const projectRoot = process.env.PROJECT_ROOT ?? path.resolve(__dirname, '../../../..')
 
-    const prompt = buildPlanPrompt({
-        title: feature.title,
-        description: feature.description,
-        criteria: feature.criteria,
-        testCases,
-        refinement
-    })
+    let planResult: unknown
+    let sessionId: string
 
-    let raw: string
     try {
-        raw = await bedrockClient.invoke(prompt)
-    } catch (err) {
-        // Hardcoded for demo purposes
-        console.warn('AI Generation failed, using demo fallback:', (err as Error).message)
-        raw = JSON.stringify({
-            plan: `# Development Plan for ${feature.title}\n\n## 1. Architecture\n- Use React context for auth state\n- Implement Axios interceptors for JWT injection\n\n## 2. Implementation Steps\n1. Modify \`auth.service.ts\` to handle new endpoints\n2. Create \`LoginModal\` component\n3. Update \`token.ts\` utility for persistent storage\n\n## 3. Risks\n- Token expiration handling needs careful sync with backend\n- Ensure secure storage of sensitive data`
+        const response = await runClaudeCode(prompt, {
+            cwd: projectRoot,
+            timeoutMs: TIMEOUT_MS, // Keep 5-minute timeout
         })
+        planResult = response.result
+        sessionId = response.sessionId
+    } catch (err: any) {
+        // Convert generic errors to HttpError for consistent API responses
+        if (err.message?.includes('timed out')) {
+            throw new HttpError(504, `Plan generation timed out after ${TIMEOUT_MS / 1000} seconds`)
+        } else if (err.message?.includes('not found')) {
+            throw new HttpError(
+                500,
+                'Claude CLI not found. Ensure `claude` is installed and available on PATH.'
+            )
+        } else {
+            throw new HttpError(500, `Failed to generate plan: ${err.message}`)
+        }
     }
 
-    // Strip markdown code fences if present
-    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/)
-    if (fenceMatch) raw = fenceMatch[1].trim()
+    // Convert result to string if it's not already
+    const planText = typeof planResult === 'string' ? planResult : JSON.stringify(planResult)
 
-    let parsed: any
-    try {
-        parsed = JSON.parse(raw)
-    } catch {
-        // Fallback for demo if AI output is not perfect JSON
-        parsed = { plan: raw }
-    }
-
-    const update: any = { content: parsed.plan }
-    if (refinement) {
-        update.$push = { refinements: refinement }
-    }
-
-    const plan = await Plan.findOneAndUpdate(
+    await Plan.findOneAndUpdate(
         { feature_id: featureId },
-        update,
+        {
+            feature_id: featureId,
+            content: planText,
+            sessionId: sessionId,
+        },
         { upsert: true, new: true, setDefaultsOnInsert: true }
     )
 
-    // Automatically transition to DEV if it's currently QA_APPROVED
-    if (feature.status === FeatureStatusEnum.QA_APPROVED) {
+    if (isValidTransition(feature.status, FeatureStatusEnum.DEV)) {
         feature.status = FeatureStatusEnum.DEV
         feature.statusHistory.push({
             status: FeatureStatusEnum.DEV,
             changedBy: { id: 'system', email: 'system' },
-            changedAt: new Date()
+            changedAt: new Date(),
         })
         await feature.save()
     }
 
-    return plan
+    return planText
+}
+
+// ─── Approve ───────────────────────────────────────────────────────────────────
+
+export async function approvePlan(featureId: string, actor: Actor) {
+    const feature = await Feature.findById(featureId)
+    if (!feature) throw new HttpError(404, 'Feature not found')
+
+    if (feature.status !== FeatureStatusEnum.DEV) {
+        throw new HttpError(
+            400,
+            `Feature must be in DEV status to approve the plan. Current status: ${feature.status}`
+        )
+    }
+
+    const plan = await Plan.findOne({ feature_id: featureId })
+    if (!plan) throw new HttpError(404, 'No plan found for this feature. Generate a plan first.')
+
+    feature.status = FeatureStatusEnum.PLAN_APPROVED
+    feature.statusHistory.push({
+        status: FeatureStatusEnum.PLAN_APPROVED,
+        changedBy: actor,
+        changedAt: new Date(),
+    })
+    await feature.save()
+
+    return { message: 'Plan approved', featureId }
+}
+
+// ─── Reject ────────────────────────────────────────────────────────────────────
+
+export async function rejectPlan(featureId: string, actor: Actor) {
+    const feature = await Feature.findById(featureId)
+    if (!feature) throw new HttpError(404, 'Feature not found')
+
+    if (feature.status !== FeatureStatusEnum.DEV) {
+        throw new HttpError(
+            400,
+            `Feature must be in DEV status to reject the plan. Current status: ${feature.status}`
+        )
+    }
+
+    await Plan.deleteOne({ feature_id: featureId })
+
+    if (isValidRejection(feature.status, FeatureStatusEnum.QA_APPROVED)) {
+        feature.status = FeatureStatusEnum.QA_APPROVED
+        feature.statusHistory.push({
+            status: FeatureStatusEnum.QA_APPROVED,
+            changedBy: actor,
+            changedAt: new Date(),
+        })
+        await feature.save()
+    }
+
+    return { message: 'Plan rejected', featureId }
 }

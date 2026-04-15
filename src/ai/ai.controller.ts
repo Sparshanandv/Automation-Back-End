@@ -1,11 +1,13 @@
 import { Request, Response, NextFunction } from 'express'
 import { approveQaTestCases, generateQaTestCases, regenerateQaTestCases } from './orchestrators/qa.orchestrator'
-import { generateDevPlan } from './orchestrators/plan.orchestrator'
+import { generateDevPlan, approvePlan, rejectPlan } from './orchestrators/plan.orchestrator'
 import { executeFeatureImplementation } from './orchestrators/execute.orchestrator'
 import { TestCase } from './models/test-case.model'
+import { AuthRequest } from '../common/middleware/auth.middleware'
+import { HttpError } from '../common/errors/http-error'
 import { Plan } from './models/plan.model'
 
-export async function generateQa(req: Request, res: Response, next: NextFunction) {
+export async function generateQa(req: AuthRequest, res: Response, next: NextFunction) {
     try {
         const { featureId } = req.params
         const result = await generateQaTestCases(featureId)
@@ -49,17 +51,6 @@ export async function regenerateQa(req: Request, res: Response, next: NextFuncti
     }
 }
 
-export async function generatePlan(req: Request, res: Response, next: NextFunction) {
-    try {
-        const { featureId } = req.params
-        const { refinement } = req.body
-        const result = await generateDevPlan(featureId, refinement)
-        res.json(result)
-    } catch (err) {
-        next(err)
-    }
-}
-
 export async function getPlan(req: Request, res: Response, next: NextFunction) {
     try {
         const { featureId } = req.params
@@ -85,6 +76,69 @@ export async function executeFeature(req: Request, res: Response, next: NextFunc
         const { featureId } = req.params
         const result = await executeFeatureImplementation(featureId)
         res.json(result)
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function generatePlan(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+        const { featureId } = req.params
+        const { testCases, userStory, optionalPrompt } = req.body
+
+        if (!Array.isArray(testCases)) {
+            res.status(400).json({ message: 'testCases must be an array' })
+            return
+        }
+        if (!userStory || typeof userStory !== 'string' || userStory.trim() === '') {
+            res.status(400).json({ message: 'userStory is required and must be a non-empty string' })
+            return
+        }
+        if (optionalPrompt !== undefined && typeof optionalPrompt !== 'string') {
+            res.status(400).json({ message: 'optionalPrompt must be a string if provided' })
+            return
+        }
+
+        const plan = await generateDevPlan(featureId, {
+            testCases,
+            userStory: userStory.trim(),
+            optionalPrompt: optionalPrompt?.trim(),
+        })
+
+        res.json({ plan })
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function approvePlanController(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+        const { featureId } = req.params
+        const actor = { id: req.user!.sub, email: req.user!.email }
+        const result = await approvePlan(featureId, actor)
+        res.json(result)
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function rejectPlanController(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+        const { featureId } = req.params
+        const actor = { id: req.user!.sub, email: req.user!.email }
+        const result = await rejectPlan(featureId, actor)
+        res.json(result)
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function getPlanController(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+        const { featureId } = req.params
+        const plan = await Plan.findOne({ feature_id: featureId })
+        if (!plan) throw new HttpError(404, 'No plan found for this feature')
+        res.json({ plan: plan.content })
     } catch (err) {
         next(err)
     }
