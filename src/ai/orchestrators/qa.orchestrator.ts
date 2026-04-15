@@ -25,7 +25,7 @@ export async function generateQaTestCases(featureId: string) {
 
     // Strip markdown code fences if present (handles truncated responses without closing fence)
     const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/)
-    if (fenceMatch) raw = fenceMatch[1].trim()
+    raw = fenceMatch?.[1]?.trim() ?? raw
 
     let parsed: unknown
     try {
