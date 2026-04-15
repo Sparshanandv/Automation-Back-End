@@ -1,0 +1,165 @@
+import { Response } from 'express'
+import { AuthRequest } from '../common/middleware/auth.middleware'
+import { ProjectService } from './project.service'
+import { GithubService } from '../github/github.service'
+import { HttpStatus } from '../common/constants/http-status'
+
+export class ProjectController {
+  static async listProjects(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.user?.sub as string
+      const projects = await ProjectService.getProjects(userId)
+      res.json(projects)
+    } catch (error: any) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Failed to list projects', error: error.message })
+    }
+  }
+
+  static async getProject(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.user?.sub as string
+      const { id } = req.params
+
+      const project = await ProjectService.getProjectById(id, userId)
+      if (!project) {
+        res.status(HttpStatus.NOT_FOUND).json({ message: 'Project not found' })
+        return
+      }
+
+      // Verify each repository against GitHub
+      // If a repository was deleted directly on GitHub, we remove it from our DB.
+      const validRepos = []
+      for (const repo of project.repos) {
+        const hasAccess = await GithubService.validateRepoAccess(repo.repo_name)
+        if (hasAccess) {
+          validRepos.push(repo)
+        } else {
+          // Clean up orphaned repository from database
+          await ProjectService.deleteRepository(id, repo._id.toString())
+        }
+      }
+      project.repos = validRepos
+
+      res.json(project)
+    } catch (error: any) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Failed to get project', error: error.message })
+    }
+  }
+
+  static async createProject(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.user?.sub as string
+      const { name, description } = req.body
+
+      if (!name) {
+        res.status(HttpStatus.BAD_REQUEST).json({ message: 'Project name is required' })
+        return
+      }
+
+      const project = await ProjectService.createProject(userId, name, description)
+      res.status(HttpStatus.CREATED).json(project)
+    } catch (error: any) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Failed to create project', error: error.message })
+    }
+  }
+
+  static async addRepository(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.user?.sub as string
+      const { id } = req.params
+      const { repo_name, branch, purpose, createNew, description, isPrivate } = req.body
+
+      if (!repo_name || !branch || !purpose) {
+        res.status(HttpStatus.BAD_REQUEST).json({ message: 'repo_name, branch, and purpose are required' })
+        return
+      }
+
+      const project = await ProjectService.getProjectById(id, userId)
+      if (!project) {
+        res.status(HttpStatus.NOT_FOUND).json({ message: 'Project not found' })
+        return
+      }
+
+      let finalRepoName = repo_name;
+
+      if (createNew) {
+        // Create the new repository and optionally its branch via GitHub API
+        try {
+          finalRepoName = await GithubService.createRepository(repo_name, description || '', !!isPrivate, branch)
+        } catch (githubErr: any) {
+          res.status(HttpStatus.BAD_REQUEST).json({ message: githubErr.message || 'Failed to create new repository on GitHub.' })
+          return
+        }
+      } else {
+        // Validation check constraint preventing identical repo mappings natively here
+        const isLinked = await ProjectService.isRepositoryLinked(repo_name)
+        if (isLinked) {
+            res.status(400).json({ message: 'Repository already linked natively to another project instance container.' })
+            return
+        }
+
+        // Validate existing GitHub repo access
+        const hasAccess = await GithubService.validateRepoAccess(repo_name)
+        if (!hasAccess) {
+          res.status(HttpStatus.BAD_REQUEST).json({ message: `Cannot access GitHub repository: ${repo_name}. Ensure it is public or you have configured GITHUB_TOKEN properly.` })
+          return
+        }
+      }
+
+      // Add to database
+      const repo = await ProjectService.addRepository(id, finalRepoName, branch, purpose)
+      res.status(HttpStatus.CREATED).json(repo)
+    } catch (error: any) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Failed to add repository', error: error.message })
+    }
+  }
+
+  static async removeRepository(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.sub as string
+    const { id, repoId } = req.params
+
+    const project = await ProjectService.getProjectById(id, userId)
+    if (!project) {
+      res.status(HttpStatus.NOT_FOUND).json({ message: 'Project not found' })
+      return
+    }
+
+    // find repo first
+    const repo = project.repos.find(r => r._id.toString() === repoId)
+
+    if (!repo) {
+      res.status(HttpStatus.NOT_FOUND).json({ message: 'Repository not found in this project' })
+      return
+    }
+
+    // delete from github
+    await GithubService.deleteRepository(repo.repo_name)
+
+    // delete from DB
+    await ProjectService.deleteRepository(id, repoId)
+
+    res.json({ message: 'Repository removed successfully' })
+
+  } catch (error: any) {
+    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Failed to remove repository', error: error.message })
+  }
+  }
+
+  static async deleteProject(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.user?.sub as string
+      const { id } = req.params
+
+      const project = await ProjectService.deleteProject(id, userId)
+      if (!project) {
+        res.status(HttpStatus.NOT_FOUND).json({ message: 'Project not found' })
+        return
+      }
+
+      res.json({ message: 'Project deleted successfully' })
+    } catch (error: any) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Failed to delete project', error: error.message })
+    }
+  }
+}
