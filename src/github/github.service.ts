@@ -199,6 +199,60 @@ export class GithubService {
       throw new Error(`Failed to delete branch: ${errorBody.message || response.statusText}`)
     }
   }
+
+  static async updateReadme(repoName: string,branch: string,content: string,message: string): Promise<void> {
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) throw new Error("GITHUB_TOKEN is not configured.");
+
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "Node.js",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+
+    const readmePath = "README.md";
+
+    let sha: string | undefined;
+
+    const getResponse = await fetch(
+      `https://api.github.com/repos/${repoName}/contents/${readmePath}?ref=${branch}`,
+      { headers }
+    );
+
+    if (getResponse.ok) {
+      const data = (await getResponse.json()) as any;
+      sha = data.sha;
+    } else if (getResponse.status !== HttpStatus.NOT_FOUND) {
+      const err = (await getResponse.json().catch(() => ({}))) as any;
+      throw new Error(
+        `Failed to fetch README: ${err.message || getResponse.statusText}`
+      );
+    }
+
+    const encodedContent = Buffer.from(content, "utf-8").toString("base64");
+
+    const updateResponse = await fetch(
+      `https://api.github.com/repos/${repoName}/contents/${readmePath}`,
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          message,
+          content: encodedContent,
+          branch,
+          ...(sha && { sha }),
+        }),
+      }
+    );
+
+    if (!updateResponse.ok) {
+      const err = (await updateResponse.json().catch(() => ({}))) as any;
+      throw new Error(
+        `Failed to update README: ${err.message || updateResponse.statusText}`
+      );
+    }
+  }
   
 }
 
