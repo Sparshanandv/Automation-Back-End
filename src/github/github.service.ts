@@ -155,6 +155,47 @@ export class GithubService {
     }
   }
 
+  /**
+   * Creates a pull request from one branch into another.
+   * @param repoName - e.g. "owner/repo"
+   * @param fromBranch - Source branch name (head)
+   * @param toBranch - Target branch name (base)
+   * @returns Pull request URL
+   */
+  static async createPullRequest(repoName: string, fromBranch: string, toBranch: string): Promise<string> {
+    const token = process.env.GITHUB_TOKEN
+    if (!token) throw new Error('GITHUB_TOKEN is not configured.')
+
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'Node.js',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+
+    const response = await fetch(`https://api.github.com/repos/${repoName}/pulls`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        title: `Merge ${fromBranch} into ${toBranch}`,
+        head: fromBranch,
+        base: toBranch
+      })
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({})) as any
+      throw new Error(`Failed to create pull request: ${errorBody.message || response.statusText}`)
+    }
+
+    const pullRequest = await response.json() as { html_url?: string }
+    if (!pullRequest.html_url) {
+      throw new Error('Pull request was created, but no PR URL was returned by GitHub.')
+    }
+
+    return pullRequest.html_url
+  }
+
 
   static async deleteRepository(fullName: string): Promise<void> {
     const token = process.env.GITHUB_TOKEN
@@ -201,4 +242,3 @@ export class GithubService {
   }
   
 }
-

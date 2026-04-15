@@ -1,19 +1,23 @@
 import { HttpError } from '../../common/errors/http-error'
 import { Feature } from '../../feature/feature.model'
+import { Project } from '../../project/project.model'
 import { runClaudeCode } from '../../common/utils/claude-code.executor'
 import { Plan } from '../models/plan.model'
+import { prepareFeatureBranch } from '../../common/utils/git-workflow.executor'
+import { GithubService } from '../../github/github.service'
 
 export async function executeFeatureImplementation(featureId: string) {
     const feature = await Feature.findById(featureId)
     if (!feature) {
         throw new HttpError(404, 'Feature not found')
     }
-
-    // const plan = await Plan.findOne({ feature_id: featureId })
+    // Before executing switch to main branch and then take pull and then take a branch and name feature/project-id/task-id and then switch to this branch then push the code to this branch and create a PR fro the main branch and then add PR link to the response field and then save this PR in DB 
     const plan= await Plan.findOne({ feature_id: featureId })
     if (!plan) {
         throw new HttpError(404, 'Plan not found for this feature')
     }
+
+    const project = feature.projectId ? await Project.findById(feature.projectId) : null
 
     const repoPath = process.env.LOCAL_REPO_PATH
     if (!repoPath) {
@@ -25,7 +29,18 @@ export async function executeFeatureImplementation(featureId: string) {
         planContent: plan?.content,
     })
 
+    //Switch to main branch and then take pull and then make a new branch
+    const featureBranchPrepared= await prepareFeatureBranch({
+        projectPath: repoPath,
+        projectName: project?.name ?? 'unscoped',
+        featureTitle: feature.title as string,
+    })
+
     const { result, sessionId } = await runClaudeCode(prompt, { cwd: repoPath })
+
+    //Create a PR
+    //TODO: In this how can we access repoName as I have to make a PR now one method is to extract it from repo model(Currently the repoPath is wrong startegy)
+    const isPrCreated= await GithubService.createPullRequest(repoPath,featureBranchPrepared.branchName,"main");
 
     return {
         featureId,
