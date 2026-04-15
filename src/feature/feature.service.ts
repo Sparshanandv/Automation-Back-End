@@ -9,43 +9,62 @@ interface Actor {
 
 async function generateFeatureKey(projectId?: string): Promise<string> {
   if (projectId) {
-    const project = await Project.findById(projectId);
-    const prefix = project
-      ? project.name
-          .replace(/[^a-zA-Z0-9]/g, "")
-          .substring(0, 4)
-          .toUpperCase()
-          .padEnd(4, "X")
-      : "TASK";
-    const count = await Feature.countDocuments({ projectId });
-    return `${prefix}-${count + 1}`;
+    const project = await Project.findById(projectId)
+    if (!project) return `TASK-${Date.now()}`
+
+    let currentCounter = project.featureCounter || 0
+
+    // Initialization for existing projects that don't have a counter yet
+    if (currentCounter === 0) {
+      const existingFeatures = await Feature.find({ projectId }).select('featureKey').lean()
+      const prefix = project.projectKey || 'TASK'
+      const prefixDash = `${prefix}-`
+      
+      let maxNum = 0
+      existingFeatures.forEach(f => {
+        if (f.featureKey && f.featureKey.startsWith(prefixDash)) {
+          const num = parseInt(f.featureKey.slice(prefixDash.length), 10)
+          if (!isNaN(num) && num > maxNum) maxNum = num
+        }
+      })
+      currentCounter = maxNum
+    }
+
+    const updatedProject = await Project.findByIdAndUpdate(
+      projectId,
+      { $set: { featureCounter: currentCounter + 1 } },
+      { new: true }
+    )
+
+    const prefix = updatedProject?.projectKey || project.projectKey || 'TASK'
+    return `${prefix}-${currentCounter + 1}`
   }
-  const count = await Feature.countDocuments({ projectId: null });
-  return `TASK-${count + 1}`;
+
+  // For global tasks (projectId null), find the max numeric suffix among existing TASK-N keys
+  const features = await Feature.find({ projectId: null }).select('featureKey').lean()
+  let maxNum = 0
+  features.forEach(f => {
+    if (f.featureKey && f.featureKey.startsWith('TASK-')) {
+      const num = parseInt(f.featureKey.split('-')[1], 10)
+      if (!isNaN(num) && num > maxNum) maxNum = num
+    }
+  })
+  
+  return `TASK-${maxNum + 1}`
 }
 
 export const featureService = {
-  async create(
-    title: string,
-    description: string,
-    criteria: string,
-    actor: Actor,
-    projectId?: string,
-  ) {
-    const featureKey = await generateFeatureKey(projectId);
+  async create(title: string, description: string, criteria: string, actor: Actor, type: string, projectId?: string) {
+    const featureKey = await generateFeatureKey(projectId)
     const feature = new Feature({
       featureKey,
       title,
       description,
       criteria,
+      type,
       status: FeatureStatusEnum.CREATED,
-      statusHistory: [
-        {
-          status: FeatureStatusEnum.CREATED,
-          changedBy: actor,
-          changedAt: new Date(),
-        },
-      ],
+      createdBy: actor,
+      statusHistory: [{ status: FeatureStatusEnum.CREATED, changedBy: actor, changedAt: new Date() }],
       ...(projectId && { projectId }),
     });
     return feature.save();

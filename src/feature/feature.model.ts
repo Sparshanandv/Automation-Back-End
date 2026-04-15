@@ -35,6 +35,8 @@ export interface IFeature extends Document {
     description: string
     criteria: string
     status: FeatureStatus
+    type: string
+    createdBy: { id: string; email: string }
     statusHistory: IStatusHistoryEntry[]
     projectId?: mongoose.Types.ObjectId
 }
@@ -51,6 +53,9 @@ const statusHistorySchema = new Schema<IStatusHistoryEntry>(
     { _id: false }
 )
 
+export const FEATURE_TYPES = ['task', 'bug', 'hotfix', 'feature', 'improvement', 'test'] as const
+export type FeatureType = (typeof FEATURE_TYPES)[number]
+
 const featureSchema = new Schema<IFeature>(
     {
         featureKey: { type: String, unique: true, sparse: true },
@@ -58,6 +63,11 @@ const featureSchema = new Schema<IFeature>(
         description: { type: String, required: true },
         criteria: { type: String, required: true },
         status: { type: String, enum: FEATURE_STATUSES, default: FeatureStatusEnum.CREATED },
+        type: { type: String, enum: FEATURE_TYPES, default: 'task' },
+        createdBy: {
+            id: { type: String, required: true },
+            email: { type: String, required: true },
+        },
         statusHistory: { type: [statusHistorySchema], default: [] },
         projectId: { type: Schema.Types.ObjectId, ref: 'Project', default: null },
     },
