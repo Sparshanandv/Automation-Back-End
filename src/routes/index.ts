@@ -6,7 +6,6 @@ import projectRouter from '../project/project.router'
 import githubRouter from '../github/github.router'
 import featureRouter from '../feature/feature.router'
 import aiRouter from '../ai/ai.router'
-import helloRouter from '../hello/hello.router'
 
 interface RouteDefinition {
   path: string
