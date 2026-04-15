@@ -1,61 +1,109 @@
-import { Response, NextFunction } from 'express'
-import { AuthRequest } from '../common/middleware/auth.middleware'
-import { featureService } from './feature.service'
-import { HttpStatus } from '../common/constants/http-status'
-import { FeatureStatus } from './feature.model'
-import { ProjectService } from '../project/project.service'
+import { Response, NextFunction } from "express";
+import { AuthRequest } from "../common/middleware/auth.middleware";
+import { featureService } from "./feature.service";
+import { HttpStatus } from "../common/constants/http-status";
+import { FeatureStatus } from "./feature.model";
+import { ProjectService } from "../project/project.service";
 
 export const featureController = {
   async create(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { title, description, criteria, projectId } = req.body
+      const { title, description, criteria, projectId } = req.body;
       if (!title || !description || !criteria) {
-        return res.status(HttpStatus.BAD_REQUEST).json({ message: 'title, description, and criteria are required' })
+        return res
+          .status(HttpStatus.BAD_REQUEST)
+          .json({ message: "title, description, and criteria are required" });
       }
       if (projectId) {
-        const exists = await ProjectService.exists(projectId)
+        const exists = await ProjectService.exists(projectId);
         if (!exists) {
-          return res.status(404).json({ message: 'Project not found' })
+          return res.status(404).json({ message: "Project not found" });
         }
       }
-      const actor = { id: req.user!.sub, email: req.user!.email }
-      const feature = await featureService.create(title, description, criteria, actor, projectId)
-      res.status(HttpStatus.CREATED).json(feature)
+      const actor = { id: req.user!.sub, email: req.user!.email };
+      const feature = await featureService.create(
+        title,
+        description,
+        criteria,
+        actor,
+        projectId,
+      );
+      res.status(HttpStatus.CREATED).json(feature);
     } catch (err) {
-      next(err)
+      next(err);
     }
   },
 
-  async getById(req: AuthRequest, res: Response, next: NextFunction) { // eslint-disable-line @typescript-eslint/no-unused-vars
+  async getById(req: AuthRequest, res: Response, next: NextFunction) {
+    // eslint-disable-line @typescript-eslint/no-unused-vars
     try {
-      const feature = await featureService.getById(req.params.id)
-      res.json(feature)
+      const feature = await featureService.getById(req.params.id);
+      res.json(feature);
     } catch (err) {
-      next(err)
+      next(err);
     }
   },
 
   async listAll(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { projectId } = req.query
+      const { projectId } = req.query;
       const features = projectId
         ? await featureService.listByProject(projectId as string)
-        : await featureService.listAll()
-      res.json(features)
+        : await featureService.listAll();
+      res.json(features);
     } catch (err) {
-      next(err)
+      next(err);
     }
   },
 
   async updateStatus(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { status } = req.body
-      if (!status) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'status is required' })
-      const actor = { id: req.user!.sub, email: req.user!.email }
-      const feature = await featureService.updateStatus(req.params.id, status as FeatureStatus, actor)
-      res.json(feature)
+      const { status } = req.body;
+      if (!status)
+        return res
+          .status(HttpStatus.BAD_REQUEST)
+          .json({ message: "status is required" });
+      const actor = { id: req.user!.sub, email: req.user!.email };
+      const feature = await featureService.updateStatus(
+        req.params.id,
+        status as FeatureStatus,
+        actor,
+      );
+      res.json(feature);
     } catch (err) {
-      next(err)
+      next(err);
     }
   },
-}
+
+  async update(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { title, description, criteria } = req.body;
+
+      // At least one field must be provided
+      if (!title && !description && !criteria) {
+        return res.status(HttpStatus.BAD_REQUEST).json({
+          message:
+            "At least one field (title, description, or criteria) is required",
+        });
+      }
+
+      const feature = await featureService.update(req.params.id, {
+        title,
+        description,
+        criteria,
+      });
+      res.json(feature);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async delete(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await featureService.delete(req.params.id);
+      res.status(HttpStatus.OK).json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+};
