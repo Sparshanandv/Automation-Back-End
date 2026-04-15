@@ -30,6 +30,7 @@ export interface IStatusHistoryEntry {
 }
 
 export interface IFeature extends Document {
+    featureKey: string
     title: string
     description: string
     criteria: string
@@ -52,6 +53,7 @@ const statusHistorySchema = new Schema<IStatusHistoryEntry>(
 
 const featureSchema = new Schema<IFeature>(
     {
+        featureKey: { type: String, unique: true, sparse: true },
         title: { type: String, required: true, trim: true },
         description: { type: String, required: true },
         criteria: { type: String, required: true },
