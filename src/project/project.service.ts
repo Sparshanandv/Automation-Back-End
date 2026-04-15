@@ -41,6 +41,11 @@ export class ProjectService {
     return !!repo
   }
   
+  static async exists(projectId: string) {
+    const project = await Project.findById(projectId)
+    return !!project
+  }
+
   static async deleteProject(projectId: string, userId: string) {
     const project = await Project.findOneAndDelete({ _id: projectId, userId })
     if (project) {
