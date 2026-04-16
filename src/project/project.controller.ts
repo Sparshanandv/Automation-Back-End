@@ -187,6 +187,8 @@ export class ProjectController {
           message: 'Project not found'
         })
       }
+
+      const token = project.githubToken as string
   
       const repo = project.repos.find(r => r._id.toString() === repoId)
       if (!repo) {
@@ -195,7 +197,7 @@ export class ProjectController {
         })
       }
   
-      const hasAccess = await GithubService.validateRepoAccess(repo.repo_name)
+      const hasAccess = await GithubService.validateRepoAccess(repo.repo_name, token)
       if (!hasAccess) {
         return res.status(HttpStatus.BAD_REQUEST).json({
           message: `Cannot access GitHub repository: ${repo.repo_name}`
