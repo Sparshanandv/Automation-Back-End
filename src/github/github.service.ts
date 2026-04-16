@@ -1,21 +1,47 @@
 import { HttpStatus } from '../common/constants/http-status'
 
 export class GithubService {
-  /**
-   * Validates if the GitHub token has access to the given repository.
-   * @param repoName - e.g. "facebook/react"
-   */
-  static async validateRepoAccess(repoName: string): Promise<boolean> {
-    const token = process.env.GITHUB_TOKEN
-    
-    try {
-      const headers: Record<string, string> = {
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'Node.js',
-      }
-      if (token) headers.Authorization = `Bearer ${token}`
+  private static headers(token: string): Record<string, string> {
+    return {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'Node.js',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    }
+  }
 
-      const response = await fetch(`https://api.github.com/repos/${repoName}`, { headers })
+  /**
+   * Returns the authenticated GitHub user's profile.
+   */
+  static async getAuthenticatedUser(token: string): Promise<{ login: string; name: string | null; avatar_url: string }> {
+    const response = await fetch('https://api.github.com/user', { headers: this.headers(token) })
+    if (!response.ok) {
+      const errorBody = await response.json() as any
+      throw new Error(`Failed to fetch GitHub user: ${errorBody.message || response.statusText}`)
+    }
+    const { login, name, avatar_url } = await response.json() as any
+    return { login, name, avatar_url }
+  }
+
+  /**
+   * Returns all repositories accessible by the provided token (up to 100, sorted by updated).
+   */
+  static async getUserRepos(token: string): Promise<string[]> {
+    const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', { headers: this.headers(token) })
+    if (!response.ok) {
+      const errorBody = await response.json() as any
+      throw new Error(`Failed to fetch repositories: ${errorBody.message || response.statusText}`)
+    }
+    const repos = await response.json() as any[]
+    return repos.map(r => r.name)
+  }
+
+  /**
+   * Validates if the token has access to the given repository.
+   */
+  static async validateRepoAccess(repoName: string, token: string): Promise<boolean> {
+    try {
+      const response = await fetch(`https://api.github.com/repos/${repoName}`, { headers: this.headers(token) })
       return response.status === HttpStatus.OK
     } catch (error) {
       console.error(`GitHub validation failed for repo: ${repoName}`, error)
@@ -24,29 +50,15 @@ export class GithubService {
   }
 
   /**
-   * Creates a new repository for the authenticated user and optionally generates a branch.
+   * Creates a new repository for the authenticated user and optionally creates a custom branch.
    */
-  static async createRepository(name: string, description: string, isPrivate: boolean, targetBranch: string): Promise<string> {
-    const token = process.env.GITHUB_TOKEN
-    if (!token) throw new Error('GITHUB_TOKEN is not configured in the server environment.')
+  static async createRepository(token: string, name: string, description: string, isPrivate: boolean, targetBranch: string): Promise<string> {
+    const headers = this.headers(token)
 
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'Node.js',
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    }
-
-    // 1. Create the repository
     const response = await fetch('https://api.github.com/user/repos', {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        name,
-        description,
-        private: isPrivate,
-        auto_init: true // Generate the initial commit on main
-      })
+      body: JSON.stringify({ name, description, private: isPrivate, auto_init: true }),
     })
 
     if (!response.ok) {
@@ -59,9 +71,7 @@ export class GithubService {
 
     const { full_name, default_branch } = await response.json() as any
 
-    // 2. Generate custom branch if it differs from default
     if (targetBranch && targetBranch !== default_branch) {
-      // 2a. Fetch the SHA of the generated default branch
       const refResponse = await fetch(`https://api.github.com/repos/${full_name}/git/refs/heads/${default_branch}`, { headers })
       if (!refResponse.ok) {
         throw new Error(`Repository created as ${full_name}, but failed to fetch base branch for branching.`)
@@ -69,68 +79,38 @@ export class GithubService {
       const refData = await refResponse.json() as any
       const sha = refData.object.sha
 
-      // 2b. Create the new branch reference
       const createRefResponse = await fetch(`https://api.github.com/repos/${full_name}/git/refs`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          ref: `refs/heads/${targetBranch}`,
-          sha
-        })
+        body: JSON.stringify({ ref: `refs/heads/${targetBranch}`, sha }),
       })
-
       if (!createRefResponse.ok) {
-         throw new Error(`Repository created as ${full_name}, but failed to create branch ${targetBranch}.`)
+        throw new Error(`Repository created as ${full_name}, but failed to create branch ${targetBranch}.`)
       }
     }
 
     return full_name
   }
 
-
   /**
    * Fetches all branches for a given repository.
-   * @param repoName - e.g. "owner/repo"
    */
-  static async getBranches(repoName: string): Promise<string[]> {
-    const token = process.env.GITHUB_TOKEN
-    if (!token) throw new Error('GITHUB_TOKEN is not configured.')
-
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'Node.js',
-      Authorization: `Bearer ${token}`
-    }
-
-    const response = await fetch(`https://api.github.com/repos/${repoName}/branches`, { headers })
-    
+  static async getBranches(repoName: string, token: string): Promise<string[]> {
+    const response = await fetch(`https://api.github.com/repos/${repoName}/branches`, { headers: this.headers(token) })
     if (!response.ok) {
       const errorBody = await response.json() as any
       throw new Error(`Failed to fetch branches: ${errorBody.message || response.statusText}`)
     }
-
     const branches = await response.json() as any[]
     return branches.map(b => b.name)
   }
 
   /**
    * Creates a new branch from a parent branch.
-   * @param repoName - e.g. "owner/repo"
-   * @param newBranch - Name of the new branch
-   * @param fromBranch - Base branch name
    */
-  static async createBranch(repoName: string, newBranch: string, fromBranch: string): Promise<void> {
-    const token = process.env.GITHUB_TOKEN
-    if (!token) throw new Error('GITHUB_TOKEN is not configured.')
+  static async createBranch(repoName: string, newBranch: string, fromBranch: string, token: string): Promise<void> {
+    const headers = this.headers(token)
 
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'Node.js',
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    }
-
-    // 1. Get the SHA of the parent branch
     const refResponse = await fetch(`https://api.github.com/repos/${repoName}/git/refs/heads/${fromBranch}`, { headers })
     if (!refResponse.ok) {
       const errorBody = await refResponse.json() as any
@@ -139,36 +119,25 @@ export class GithubService {
     const refData = await refResponse.json() as any
     const sha = refData.object.sha
 
-    // 2. Create the new reference
     const createRefResponse = await fetch(`https://api.github.com/repos/${repoName}/git/refs`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        ref: `refs/heads/${newBranch}`,
-        sha
-      })
+      body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha }),
     })
-
     if (!createRefResponse.ok) {
       const errorBody = await createRefResponse.json() as any
       throw new Error(`Failed to create branch: ${errorBody.message || createRefResponse.statusText}`)
     }
   }
 
-
-  static async deleteRepository(fullName: string): Promise<void> {
-    const token = process.env.GITHUB_TOKEN
-    if (!token) throw new Error('GITHUB_TOKEN is not configured')
-
+  /**
+   * Deletes a repository.
+   */
+  static async deleteRepository(fullName: string, token: string): Promise<void> {
     const response = await fetch(`https://api.github.com/repos/${fullName}`, {
       method: 'DELETE',
-      headers: {
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'Node.js',
-        Authorization: `Bearer ${token}`
-      }
+      headers: this.headers(token),
     })
-
     if (!response.ok) {
       throw new Error(`GitHub delete failed: ${response.statusText}`)
     }
@@ -176,29 +145,66 @@ export class GithubService {
 
   /**
    * Deletes a branch from a repository.
-   * @param repoName - e.g. "owner/repo"
-   * @param branchName - Name of the branch to delete
    */
-  static async deleteBranch(repoName: string, branchName: string): Promise<void> {
-    const token = process.env.GITHUB_TOKEN
-    if (!token) throw new Error('GITHUB_TOKEN is not configured.')
-
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'Node.js',
-      Authorization: `Bearer ${token}`
-    }
-
+  static async deleteBranch(repoName: string, branchName: string, token: string): Promise<void> {
     const response = await fetch(`https://api.github.com/repos/${repoName}/git/refs/heads/${branchName}`, {
       method: 'DELETE',
-      headers
+      headers: this.headers(token),
     })
-
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({})) as any
       throw new Error(`Failed to delete branch: ${errorBody.message || response.statusText}`)
     }
   }
+
+  static async updateReadme(
+    repoName: string,
+    branch: string,
+    content: string,
+    message: string,
+    token: string
+  ): Promise<void> {
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'Node.js',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    }
+
+    const readmePath = 'README.md'
+
+    let sha: string | undefined
+
+    const getResponse = await fetch(
+      `https://api.github.com/repos/${repoName}/contents/${readmePath}?ref=${branch}`,
+      { headers }
+    )
+
+    if (getResponse.ok) {
+      const data = (await getResponse.json()) as any
+      sha = data.sha
+    } else if (getResponse.status !== HttpStatus.NOT_FOUND) {
+      const err = (await getResponse.json().catch(() => ({}))) as any
+      throw new Error(`Failed to fetch README: ${err.message || getResponse.statusText}`)
+    }
+
+    const encodedContent = Buffer.from(content, 'utf-8').toString('base64')
+
+    const updateResponse = await fetch(`https://api.github.com/repos/${repoName}/contents/${readmePath}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        message,
+        content: encodedContent,
+        branch,
+        ...(sha && { sha }),
+      }),
+    })
+
+    if (!updateResponse.ok) {
+      const err = (await updateResponse.json().catch(() => ({}))) as any
+      throw new Error(`Failed to update README: ${err.message || updateResponse.statusText}`)
+    }
+  }
   
 }
-

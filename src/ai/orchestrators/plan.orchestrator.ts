@@ -6,6 +6,8 @@ import { isValidTransition, isValidRejection } from '../../feature/feature.state
 import { Plan } from '../models/plan.model'
 import { TestCase } from '../models/test-case.model'
 import { buildPlanPrompt } from '../prompts/plan.prompt'
+import * as bedrockClient from '../bedrock.client'
+import { parseAiJson } from '../ai.utils'
 
 const TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 

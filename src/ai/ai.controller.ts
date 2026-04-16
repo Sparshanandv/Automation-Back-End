@@ -20,6 +20,19 @@ export async function generateQa(req: AuthRequest, res: Response, next: NextFunc
     }
 }
 
+export async function getQaTestCases(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { featureId } = req.params
+        const result = await TestCase.findOne({ feature_id: featureId })
+        if (!result) {
+            return res.status(404).json({ message: 'Test cases not found' })
+        }
+        res.json(result)
+    } catch (err) {
+        next(err)
+    }
+}
+
 export async function getQaResults(req: Request, res: Response, next: NextFunction) {
     try {
         const { featureId } = req.params

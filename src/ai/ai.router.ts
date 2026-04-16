@@ -3,6 +3,7 @@ import {
   generateQa,
   getQaResults,
   generatePlan,
+  getQaTestCases,
   getPlanController,
   approvePlanController,
   rejectPlanController,
@@ -11,7 +12,8 @@ import {
   executeFeature,
   getCodeGeneration,
   getPullRequest,
-  getAllPullRequests
+  getAllPullRequests,
+  getPlan
 } from './ai.controller'
 
 const router = Router()
@@ -19,6 +21,9 @@ const router = Router()
 // QA Routes
 router.post('/qa/generate/:featureId', generateQa)
 router.get('/qa/results/:featureId', getQaResults)
+router.get('/qa/:featureId', getQaTestCases)
+router.post('/plan/generate/:featureId', generatePlan)
+router.get('/plan/:featureId', getPlan)
 router.post('/qa/regenerate/:featureId', regenerateQa)
 router.post('/qa/approve/:featureId', approveQa)
 
