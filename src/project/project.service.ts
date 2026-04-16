@@ -39,9 +39,10 @@ static async createProject(userId: string, name: string, description?: string, g
     projectId: string,
     repo_name: string,
     branch: string,
-    purpose: string
+    purpose: string,
+    localPath?: string
   ) {
-    const repo = new Repository({ projectId, repo_name, branch, purpose })
+    const repo = new Repository({ projectId, repo_name, branch, purpose, localPath })
     await repo.save()
     return repo
   }

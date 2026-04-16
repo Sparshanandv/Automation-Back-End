@@ -1,3 +1,6 @@
+import { exec } from 'child_process'
+import { mkdir } from 'fs/promises'
+import path from 'path'
 import { HttpStatus } from '../common/constants/http-status'
 
 export class GithubService {
@@ -155,6 +158,41 @@ export class GithubService {
       const errorBody = await response.json().catch(() => ({})) as any
       throw new Error(`Failed to delete branch: ${errorBody.message || response.statusText}`)
     }
+  }
+
+  /**
+   * Clones a GitHub repository to a local path.
+   * Path format: LOCAL_REPO_PATH/projectName/repoName
+   */
+  static async cloneRepository(repoFullName: string, localPath: string, token?: string): Promise<void> {
+    const { existsSync } = await import('fs')
+
+    if (existsSync(localPath)) {
+      console.log(`[git clone] Skipping — directory already exists: ${localPath}`)
+      return
+    }
+
+    await mkdir(path.dirname(localPath), { recursive: true })
+
+    const cloneUrl = token
+      ? `https://${token}@github.com/${repoFullName}.git`
+      : `https://github.com/${repoFullName}.git`
+
+    const safeLogUrl = `https://***@github.com/${repoFullName}.git`
+    console.log(`[git clone] Starting: ${safeLogUrl} → ${localPath}`)
+
+    await new Promise<void>((resolve, reject) => {
+      exec(`/usr/bin/git clone "${cloneUrl}" "${localPath}"`, { timeout: 120000 }, (error, stdout, stderr) => {
+        if (error) {
+          console.error(`[git clone] Failed: ${error.message}`)
+          console.error(`[git clone] stderr: ${stderr}`)
+          reject(error)
+        } else {
+          console.log(`[git clone] Success: ${localPath}`)
+          resolve()
+        }
+      })
+    })
   }
 
   static async updateReadme(

@@ -6,6 +6,7 @@ const repositorySchema = new mongoose.Schema(
     repo_name: { type: String, required: true, trim: true },
     branch: { type: String, required: true, trim: true },
     purpose: { type: String, enum: ['FE', 'BE', 'Infra'], required: true },
+    localPath: { type: String, trim: true },
   },
   { timestamps: true }
 )

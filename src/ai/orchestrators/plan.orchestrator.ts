@@ -25,10 +25,10 @@ export async function generateDevPlan(
     const feature = await Feature.findById(featureId)
     if (!feature) throw new HttpError(404, 'Feature not found')
 
-    if (feature.status !== FeatureStatusEnum.QA_APPROVED) {
+if (feature.status !== FeatureStatusEnum.QA_APPROVED && feature.status !== FeatureStatusEnum.DEV) {
         throw new HttpError(
             400,
-            `Feature must be in QA_APPROVED status to generate a dev plan. Current status: ${feature.status}`
+            `Feature must be in QA_APPROVED or DEV status to generate a dev plan. Current status: ${feature.status}`
         )
     }
 
