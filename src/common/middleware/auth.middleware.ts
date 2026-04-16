@@ -4,7 +4,7 @@ import { HttpStatus } from '../constants/http-status'
 
 export interface AuthRequest extends Request {
   user?: { sub: string; email: string }
-  file?: Express.Multer.File
+  file?: any
 }
 
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
