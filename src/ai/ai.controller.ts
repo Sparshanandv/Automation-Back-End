@@ -7,6 +7,8 @@ import { AuthRequest } from '../common/middleware/auth.middleware'
 import { HttpError } from '../common/errors/http-error'
 import { Plan } from './models/plan.model'
 import { CodeGeneration } from './models/code-generation.model'
+import { PullRequest } from './models/pull-request.model'
+import { Feature } from '../feature/feature.model'
 
 export async function generateQa(req: AuthRequest, res: Response, next: NextFunction) {
     try {
@@ -159,6 +161,44 @@ export async function getPlanController(req: AuthRequest, res: Response, next: N
         const plan = await Plan.findOne({ feature_id: featureId })
         if (!plan) throw new HttpError(404, 'No plan found for this feature')
         res.json({ plan: plan.content })
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function getPullRequest(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { featureId } = req.params
+        const pr = await PullRequest.findOne({ feature_id: featureId })
+
+        if (!pr) {
+            return res.status(404).json({ message: 'No pull request found for this feature' })
+        }
+
+        res.json(pr)
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function getAllPullRequests(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+        // Optional: filter by project
+        const { projectId } = req.query
+
+        let query = {}
+        if (projectId) {
+            // Get all features for this project
+            const features = await Feature.find({ projectId })
+            const featureIds = features.map(f => f._id)
+            query = { feature_id: { $in: featureIds } }
+        }
+
+        const prs = await PullRequest.find(query)
+            .populate('feature_id', 'title status')
+            .sort({ createdAt: -1 })
+
+        res.json(prs)
     } catch (err) {
         next(err)
     }
