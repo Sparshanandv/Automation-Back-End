@@ -28,7 +28,7 @@ export const featureController = {
     }
   },
 
-  async getById(req: AuthRequest, res: Response, next: NextFunction) {
+  async getById(req: AuthRequest, res: Response, next: NextFunction) { 
     // eslint-disable-line @typescript-eslint/no-unused-vars
     try {
       const feature = await featureService.getById(req.params.id);
