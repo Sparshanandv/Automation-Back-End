@@ -1,13 +1,14 @@
-import { Router } from 'express'
-import { ProjectController } from './project.controller'
+import { Router } from "express";
+import { ProjectController } from "./project.controller";
 
-const router = Router()
+const router = Router();
 
-router.get('/', ProjectController.listProjects)
-router.post('/', ProjectController.createProject)
-router.get('/:id', ProjectController.getProject)
-router.post('/:id/repos', ProjectController.addRepository)
-router.delete('/:id/repos/:repoId', ProjectController.removeRepository)
-router.delete('/:id', ProjectController.deleteProject)
+router.get("/", ProjectController.listProjects);
+router.post("/", ProjectController.createProject);
+router.get("/:id", ProjectController.getProject);
+router.post("/:id/repos", ProjectController.addRepository);
+router.delete("/:id/repos/:repoId", ProjectController.removeRepository);
 
-export default router
+router.delete("/:id", ProjectController.deleteProject);
+
+export default router;
