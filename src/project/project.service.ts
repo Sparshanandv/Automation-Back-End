@@ -25,7 +25,7 @@ static async createProject(userId: string, name: string, description?: string, g
       counter++
     }
 
-    const project = new Project({ name, description, userId, githubToken, createdByEmail })
+    const project = new Project({ name, description, userId, githubToken, createdByEmail,projectKey })
     await project.save()
     return project
   }

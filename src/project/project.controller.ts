@@ -167,4 +167,59 @@ export class ProjectController {
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Failed to delete project', error: error.message })
     }
   }
+
+  static async updateReadmeInRepo(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.user?.sub as string
+      const { id, repoId } = req.params
+      const { commitMessage } = req.body
+      const file = req.file
+  
+      if (!file) {
+        return res.status(HttpStatus.BAD_REQUEST).json({ message: 'README file is required' })
+      }
+  
+      const content = file.buffer.toString('utf-8')
+  
+      const project = await ProjectService.getProjectById(id, userId)
+      if (!project) {
+        return res.status(HttpStatus.NOT_FOUND).json({
+          message: 'Project not found'
+        })
+      }
+
+      const token = project.githubToken as string
+  
+      const repo = project.repos.find(r => r._id.toString() === repoId)
+      if (!repo) {
+        return res.status(HttpStatus.NOT_FOUND).json({
+          message: 'Repository not found in this project'
+        })
+      }
+  
+      const hasAccess = await GithubService.validateRepoAccess(repo.repo_name, token)
+      if (!hasAccess) {
+        return res.status(HttpStatus.BAD_REQUEST).json({
+          message: `Cannot access GitHub repository: ${repo.repo_name}`
+        })
+      }
+  
+      await GithubService.updateReadme(
+        repo.repo_name,
+        repo.branch,
+        content,
+        commitMessage || 'Update README via file upload'
+      )
+  
+      return res.json({
+        message: 'README updated successfully'
+      })
+  
+    } catch (error: any) {
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: 'Failed to update readme in project',
+        error: error.message
+      })
+    }
+  }
 }
