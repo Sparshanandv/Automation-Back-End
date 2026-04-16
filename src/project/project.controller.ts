@@ -188,27 +188,34 @@ export class ProjectController {
         })
       }
 
-      const token = project.githubToken as string
-  
+      const token = project.githubToken || process.env.GITHUB_TOKEN
+      if (!token) {
+        return res.status(HttpStatus.BAD_REQUEST).json({
+          message:
+            'This project has no GitHub token configured. Please update the project with a valid GitHub token.',
+        })
+      }
+
       const repo = project.repos.find(r => r._id.toString() === repoId)
       if (!repo) {
         return res.status(HttpStatus.NOT_FOUND).json({
-          message: 'Repository not found in this project'
+          message: 'Repository not found in this project',
         })
       }
-  
+
       const hasAccess = await GithubService.validateRepoAccess(repo.repo_name, token)
       if (!hasAccess) {
         return res.status(HttpStatus.BAD_REQUEST).json({
-          message: `Cannot access GitHub repository: ${repo.repo_name}`
+          message: `Cannot access GitHub repository: ${repo.repo_name}. Ensure the name is owner/repo, the repo exists, and the token has access.`,
         })
       }
-  
+
       await GithubService.updateReadme(
         repo.repo_name,
         repo.branch,
         content,
-        commitMessage || 'Update README via file upload'
+        commitMessage || 'Update README via file upload',
+        token
       )
   
       return res.json({
