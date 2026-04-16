@@ -8,6 +8,7 @@ import { TestCase } from '../models/test-case.model'
 import { buildPlanPrompt } from '../prompts/plan.prompt'
 import * as bedrockClient from '../bedrock.client'
 import { parseAiJson } from '../ai.utils'
+import { Project } from '../../project/project.model'
 
 const TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -25,10 +26,10 @@ export async function generateDevPlan(
     const feature = await Feature.findById(featureId)
     if (!feature) throw new HttpError(404, 'Feature not found')
 
-    if (feature.status !== FeatureStatusEnum.QA_APPROVED) {
+if (feature.status !== FeatureStatusEnum.QA_APPROVED && feature.status !== FeatureStatusEnum.DEV) {
         throw new HttpError(
             400,
-            `Feature must be in QA_APPROVED status to generate a dev plan. Current status: ${feature.status}`
+            `Feature must be in QA_APPROVED or DEV status to generate a dev plan. Current status: ${feature.status}`
         )
     }
 
@@ -42,8 +43,12 @@ export async function generateDevPlan(
         testCases: testCases
     })
 
+       const project=await Project.findOne({feature_id: featureId})
+        if(!project){
+            throw new HttpError(404, 'Project not found for this feature')
+        }
     // Resolve monorepo root: works from both ts-node (src/) and compiled (dist/) contexts
-    const projectRoot = process.env.PROJECT_ROOT ?? path.resolve(__dirname, '../../../..')
+    const projectRoot = `${process.env.LOCAL_REPO_PATH}/${project.name}`
 
     let planResult: unknown
     let sessionId: string

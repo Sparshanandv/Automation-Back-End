@@ -26,8 +26,12 @@ export async function executeFeatureImplementation(featureId: string) {
     if (!plan) {
         throw new HttpError(404, 'Plan not found for this feature')
     }
+    const project=await Project.findOne({feature_id: featureId})
+    if(!project){
+        throw new HttpError(404, 'Project not found for this feature')
+    }
 
-    const repoPath = process.env.LOCAL_REPO_PATH
+    const repoPath = `${process.env.LOCAL_REPO_PATH}/${project.name}`
     if (!repoPath) {
         throw new HttpError(500, 'LOCAL_REPO_PATH environment variable is not configured')
     }
@@ -38,9 +42,6 @@ export async function executeFeatureImplementation(featureId: string) {
     })
 
     // Get project name for branch creation
-    const project = feature.projectId
-        ? await Project.findById(feature.projectId)
-        : null
     const projectName = project?.name || 'automation'
     const featureTitle = feature.title || 'feature'
 

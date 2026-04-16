@@ -1,3 +1,4 @@
+import path from 'path'
 import { Response } from 'express'
 import { AuthRequest } from '../common/middleware/auth.middleware'
 import { ProjectService } from './project.service'
@@ -114,7 +115,18 @@ export class ProjectController {
         }
       }
 
-      const repo = await ProjectService.addRepository(id, finalRepoName, branch, purpose)
+      const baseDir = process.env.LOCAL_REPO_PATH || ''
+      const projectNameSafe = project.name.replace(/[^a-zA-Z0-9_-]/g, '_')
+      const repoNameOnly = finalRepoName.split('/').pop() || finalRepoName
+      const localPath = path.join(baseDir, projectNameSafe, repoNameOnly)
+
+      const repo = await ProjectService.addRepository(id, finalRepoName, branch, purpose, localPath)
+
+      // Clone in background — never block the response
+      GithubService.cloneRepository(finalRepoName, localPath, token).catch((err) => {
+        console.error(`[git clone] Failed to clone ${finalRepoName} to ${localPath}:`, err.message)
+      })
+
       res.status(HttpStatus.CREATED).json(repo)
     } catch (error: any) {
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'Failed to add repository', error: error.message })
