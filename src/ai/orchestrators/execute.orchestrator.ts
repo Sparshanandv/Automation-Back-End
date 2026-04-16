@@ -26,7 +26,7 @@ export async function executeFeatureImplementation(featureId: string) {
     if (!plan) {
         throw new HttpError(404, 'Plan not found for this feature')
     }
-    const project=await Project.findOne({feature_id: featureId})
+    const project=await Project.findOne({_id: feature.projectId})
     if(!project){
         throw new HttpError(404, 'Project not found for this feature')
     }
