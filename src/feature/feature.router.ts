@@ -5,9 +5,9 @@ const router = Router();
 
 router.post("/", featureController.create);
 router.get("/", featureController.listAll);
+router.get("/types", featureController.getTypes);
 router.get("/:id", featureController.getById);
 router.patch("/:id", featureController.update);
-router.get('/types',       featureController.getTypes);
 router.patch("/:id/status", featureController.updateStatus);
 router.delete("/:id", featureController.delete);
 
