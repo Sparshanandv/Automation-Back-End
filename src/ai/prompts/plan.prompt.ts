@@ -147,7 +147,7 @@ export function buildPlanPrompt(input: {
         ? `\n\n## ADDITIONAL INSTRUCTIONS FROM USER\n${input.optionalPrompt}`
         : ''
 
-    return `${SYSTEM_CONTEXT}
+    return `
 
 ---
 

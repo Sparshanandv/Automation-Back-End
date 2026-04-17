@@ -1,16 +1,11 @@
-import path from 'path'
 import { HttpError } from '../../common/errors/http-error'
-import { runClaudeCode } from '../../common/utils/claude-code.executor'
 import { Feature, FeatureStatusEnum } from '../../feature/feature.model'
 import { isValidTransition, isValidRejection } from '../../feature/feature.state-machine'
 import { Plan } from '../models/plan.model'
 import { TestCase } from '../models/test-case.model'
 import { buildPlanPrompt } from '../prompts/plan.prompt'
 import * as bedrockClient from '../bedrock.client'
-import { parseAiJson } from '../ai.utils'
 import { Project } from '../../project/project.model'
-
-const TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 
 interface Actor {
     id: string
@@ -43,46 +38,22 @@ if (feature.status !== FeatureStatusEnum.QA_APPROVED && feature.status !== Featu
         testCases: testCases
     })
 
-        const project=await Project.findOne({_id: feature.projectId})
-        if(!project){
-            throw new HttpError(404, 'Project not found for this feature')
-        }
-    // Resolve monorepo root: works from both ts-node (src/) and compiled (dist/) contexts
-    const projectRoot = `${process.env.LOCAL_REPO_PATH}/${project.name}`
-
-    let planResult: unknown
-    let sessionId: string
+    let planText: string
 
     try {
-        const response = await runClaudeCode(prompt, {
-            cwd: projectRoot,
-            timeoutMs: TIMEOUT_MS, // Keep 5-minute timeout
-        })
-        planResult = response.result
-        sessionId = response.sessionId
+        // Use Bedrock API directly — fast (~30-60s), no subprocess, no git side effects
+        planText = await bedrockClient.invoke(prompt)
+        if (!planText) throw new Error('Empty response from Bedrock')
     } catch (err: any) {
-        // Convert generic errors to HttpError for consistent API responses
-        if (err.message?.includes('timed out')) {
-            throw new HttpError(504, `Plan generation timed out after ${TIMEOUT_MS / 1000} seconds`)
-        } else if (err.message?.includes('not found')) {
-            throw new HttpError(
-                500,
-                'Claude CLI not found. Ensure `claude` is installed and available on PATH.'
-            )
-        } else {
-            throw new HttpError(500, `Failed to generate plan: ${err.message}`)
-        }
+        throw new HttpError(500, `Failed to generate plan: ${err.message}`)
     }
 
-    // Convert result to string if it's not already
-    const planText = typeof planResult === 'string' ? planResult : JSON.stringify(planResult)
-
-   const plan = await Plan.findOneAndUpdate(
+    const plan = await Plan.findOneAndUpdate(
         { feature_id: featureId },
         {
             feature_id: featureId,
             content: planText,
-            sessionId: sessionId,
+            status: 'completed',
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
     )

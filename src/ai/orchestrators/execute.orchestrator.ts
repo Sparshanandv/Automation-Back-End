@@ -1,20 +1,26 @@
+import fs from 'fs'
+import path from 'path'
 import { HttpError } from '../../common/errors/http-error'
-import { Feature } from '../../feature/feature.model'
-import { runClaudeCode } from '../../common/utils/claude-code.executor'
+import { Feature, FeatureStatusEnum } from '../../feature/feature.model'
 import { Plan } from '../models/plan.model'
 import { CodeGeneration } from '../models/code-generation.model'
-import { Project } from '../../project/project.model'
+import { Project, Repository } from '../../project/project.model'
 import { PullRequest } from '../models/pull-request.model'
+import * as bedrockClient from '../bedrock.client'
+import { GithubService } from '../../github/github.service'
 
+/**
+ * Generate code for a feature using Bedrock API.
+ * Writes files to disk, pushes them to GitHub via API, and opens a PR.
+ * Synchronous — no polling needed.
+ */
 export async function executeFeatureImplementation(featureId: string) {
     const feature = await Feature.findById(featureId)
-    if (!feature) {
-        throw new HttpError(404, 'Feature not found')
-    }
+    if (!feature) throw new HttpError(404, 'Feature not found')
 
-    // Check if code generation already exists
+    // Return existing completed result
     const existingCodeGen = await CodeGeneration.findOne({ feature_id: featureId })
-    if (existingCodeGen) {
+    if (existingCodeGen && existingCodeGen.status === 'completed') {
         return {
             featureId,
             sessionId: existingCodeGen.sessionId,
@@ -23,66 +29,114 @@ export async function executeFeatureImplementation(featureId: string) {
     }
 
     const plan = await Plan.findOne({ feature_id: featureId })
-    if (!plan) {
-        throw new HttpError(404, 'Plan not found for this feature')
-    }
-    const project=await Project.findOne({_id: feature.projectId})
-    if(!project){
-        throw new HttpError(404, 'Project not found for this feature')
+    if (!plan) throw new HttpError(404, 'Plan not found for this feature')
+
+    if (!feature.projectId) throw new HttpError(400, 'Feature is not linked to a project')
+    const project = await Project.findById(feature.projectId)
+    if (!project) throw new HttpError(404, 'Project not found for this feature')
+
+    // Use the linked repo's localPath — prefer BE repo, fall back to any repo
+    const repo = await (Repository as any).findOne({ projectId: project._id, purpose: 'BE' })
+           || await (Repository as any).findOne({ projectId: project._id })
+
+    const repoPath: string = repo?.localPath
+        || `${process.env.LOCAL_REPO_PATH}/${project.name}`
+
+    if (!fs.existsSync(repoPath)) {
+        throw new HttpError(400, `Repository directory not found at "${repoPath}". Ensure LOCAL_REPO_PATH is correct or add a repo with a localPath to the project.`)
     }
 
-    const repoPath = `${process.env.LOCAL_REPO_PATH}/${project.name}`
-    if (!repoPath) {
-        throw new HttpError(500, 'LOCAL_REPO_PATH environment variable is not configured')
-    }
+    // Snapshot top-level structure so the prompt is grounded in reality
+    const repoFolderName = path.basename(repoPath)
+    const topLevelEntries = fs.readdirSync(repoPath)
+        .filter(e => !e.startsWith('.') && e !== 'node_modules' && e !== 'dist')
+        .slice(0, 30)
+        .join(', ')
 
-    const prompt = buildPrompt({
+    // ── Generate code via Bedrock ──────────────────────────────────────────────
+    const prompt = buildCodeGenPrompt({
         featureTitle: feature.title as string,
-        planContent: plan?.content,
+        planContent: plan.content,
+        repoFolderName,
+        topLevelEntries,
     })
 
-    // Get project name for branch creation
-    const projectName = project?.name || 'automation'
-    const featureTitle = feature.title || 'feature'
+    let generatedFiles: Array<{ path: string; content: string }> = []
+    let summary = ''
 
-    const { result, sessionId, prUrl, branchName } = await runClaudeCode(prompt, {
-        cwd: repoPath,
-        projectName,
-        featureTitle
-    })
-
-    // Parse result if it's a JSON string
-    let parsedResult = result
-    if (typeof result === 'string') {
-        try {
-            // Try to extract JSON from markdown code fences or other formatting
-            parsedResult = extractJsonFromString(result)
-        } catch (err) {
-            throw new HttpError(500, `Failed to parse Claude Code result as JSON: ${err instanceof Error ? err.message : 'Unknown error'}. Raw result: ${result.slice(0, 200)}`)
-        }
+    try {
+        const raw = await bedrockClient.invoke(prompt, 32000)
+        const parsed = extractJson(raw)
+        generatedFiles = parsed.files || []
+        summary = parsed.summary || ''
+    } catch (err: any) {
+        throw new HttpError(500, `Code generation via Bedrock failed: ${err.message}`)
     }
 
-    // Save to database
+    if (!generatedFiles.length) {
+        throw new HttpError(500, 'Bedrock returned no files to write. Check the plan content.')
+    }
+
+    // ── Sanitize paths and write files to disk ────────────────────────────────
+    const cleanedFiles: Array<{ path: string; content: string }> = []
+    for (const file of generatedFiles) {
+        if (!file.path || !file.content) continue
+        // Strip any accidental leading segment that matches the repo folder name
+        // e.g. "Automation-Back-End/src/foo.ts" → "src/foo.ts"
+        const cleanPath = stripRepoPrefix(file.path, repoFolderName)
+        const fullPath = path.join(repoPath, cleanPath)
+        // Safety: ensure the resolved path stays inside repoPath
+        if (!fullPath.startsWith(path.resolve(repoPath))) {
+            console.warn(`[CodeGen] Skipping unsafe path: ${file.path}`)
+            continue
+        }
+        fs.mkdirSync(path.dirname(fullPath), { recursive: true })
+        fs.writeFileSync(fullPath, file.content, 'utf-8')
+        cleanedFiles.push({ path: cleanPath, content: file.content })
+    }
+    const filesWritten = cleanedFiles.map(f => f.path)
+
+    // ── Push to GitHub and create PR ───────────────────────────────────────────
+    let prUrl = ''
+    let prNumber = 0
+    let branchName = ''
+
+    if (project.githubToken && repo?.repo_name) {
+        try {
+            const featureTitle = (feature.title as string) || 'feature'
+            const projectName = project.name || 'automation'
+            branchName = `feature/${sanitize(projectName)}/${sanitize(featureTitle)}`
+            const baseBranch = repo.branch || 'main'
+
+            const prResult = await GithubService.pushFilesAndCreatePR(
+                repo.repo_name,
+                branchName,
+                cleanedFiles,
+                `feat: ${featureTitle}`,
+                `Generated by AI Code Gen\n\n${summary}`,
+                baseBranch,
+                project.githubToken
+            )
+            prUrl = prResult.prUrl
+            prNumber = prResult.prNumber
+        } catch (ghErr: any) {
+            console.warn(`[CodeGen] GitHub PR creation failed (code still written to disk): ${ghErr.message}`)
+        }
+    } else {
+        console.warn('[CodeGen] No githubToken or repo_name — skipping GitHub push and PR creation')
+    }
+
+    // ── Persist result ─────────────────────────────────────────────────────────
+    const result = { filesWritten, summary }
+
     await CodeGeneration.findOneAndUpdate(
         { feature_id: featureId },
-        {
-            feature_id: featureId,
-            result: parsedResult,
-            sessionId: sessionId,
-        },
+        { feature_id: featureId, status: 'completed', result, sessionId: 'bedrock' },
         { upsert: true, new: true, setDefaultsOnInsert: true }
     )
 
-    // Save PR if created
-    if (prUrl && branchName) {
-        // Extract owner and repo from repoPath or use env variable
-        const repoOwner = process.env.GITHUB_REPO_OWNER || 'unknown'
-        const repoName = process.env.GITHUB_REPO_NAME || 'unknown'
-
-        // Extract PR number from URL
-        const prNumberMatch = prUrl.match(/\/pull\/(\d+)/)
-        const prNumber = prNumberMatch ? parseInt(prNumberMatch[1]) : 0
-
+    if (prUrl && branchName && repo?.repo_name) {
+        const [owner, repoName] = (repo.repo_name as string).split('/')
         await PullRequest.findOneAndUpdate(
             { feature_id: featureId },
             {
@@ -91,87 +145,114 @@ export async function executeFeatureImplementation(featureId: string) {
                 pr_url: prUrl,
                 branch_name: branchName,
                 status: 'open',
-                title: `feat: ${featureTitle}`,
-                description: 'Generated by Claude Code',
-                repository: {
-                    owner: repoOwner,
-                    name: repoName,
-                },
+                title: `feat: ${feature.title}`,
+                description: 'Generated by AI Code Gen',
+                repository: { owner: owner || 'unknown', name: repoName || 'unknown' },
             },
             { upsert: true, new: true, setDefaultsOnInsert: true }
         )
     }
 
-    console.log('parsedResult',parsedResult);
-
-    return {
-        featureId,
-        sessionId,
-        result: parsedResult,
-        prUrl,
-        branchName,
+    // Advance feature status to CODE_GEN
+    if (feature.status === FeatureStatusEnum.PLAN_APPROVED) {
+        feature.status = FeatureStatusEnum.CODE_GEN
+        feature.statusHistory.push({
+            status: FeatureStatusEnum.CODE_GEN,
+            changedBy: { id: 'system', email: 'system' },
+            changedAt: new Date(),
+        })
+        await feature.save()
     }
+
+    console.log(`[CodeGen] Done for feature ${featureId}. Files: ${filesWritten.join(', ')}. PR: ${prUrl || 'none'}`)
+
+    return { featureId, sessionId: 'bedrock', result, prUrl, branchName }
 }
 
-function extractJsonFromString(raw: string): unknown {
-    // First, try direct JSON parse
-    try {
-        return JSON.parse(raw)
-    } catch {
-        // Continue to extraction methods
-    }
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
-    // Try to extract JSON from markdown code fences (```json ... ```)
-    const codeBlockMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
-    if (codeBlockMatch) {
-        try {
-            return JSON.parse(codeBlockMatch[1].trim())
-        } catch {
-            // Continue to next method
-        }
-    }
-
-    // Try to find JSON object between curly braces
-    const jsonObjectMatch = raw.match(/\{[\s\S]*\}/)
-    if (jsonObjectMatch) {
-        try {
-            return JSON.parse(jsonObjectMatch[0])
-        } catch {
-            // Continue to next method
-        }
-    }
-
-    // If all else fails, throw error with sample of what we received
-    throw new Error(`Could not extract valid JSON from string. Preview: ${raw.slice(0, 300)}`)
-}
-
-function buildPrompt(input: { featureTitle: string; planContent: unknown }): string {
+function buildCodeGenPrompt(input: {
+    featureTitle: string
+    planContent: unknown
+    repoFolderName: string
+    topLevelEntries: string
+}): string {
     const planText = typeof input.planContent === 'string'
         ? input.planContent
         : JSON.stringify(input.planContent, null, 2)
 
-    return `You are an expert software engineer. You have been given a pre-approved implementation plan. Your job is to execute it exactly — do NOT re-plan or deviate.
+    return `You are a senior software engineer. Implement the following feature by generating complete, working code files.
 
 ## Feature
 ${input.featureTitle}
 
-## Implementation Plan to Execute
+## Approved Implementation Plan
 ${planText}
 
+## Repository Structure
+Repo folder name: ${input.repoFolderName}
+Top-level contents: ${input.topLevelEntries}
+
 ## Instructions
+- Generate ALL files described in the plan's "Files to Create" section
+- Each file must have complete, working code — no placeholders or TODOs
+- Follow the existing codebase conventions described in the plan
 
-1. **Read the codebase** — briefly explore the repo to understand existing patterns (file structure, imports, naming conventions, error handling).
-2. **Implement the plan** — write all the code files to disk exactly as described in the plan above. Follow existing project conventions (TypeScript, Express patterns, HttpError, etc.).
-3. **Report** — return a JSON summary of what you did.
+## Required Output Format
+Return ONLY a valid JSON object — no markdown, no explanation, no code fences. Just raw JSON:
 
-Your final output MUST be valid JSON matching this structure exactly:
-
-\`\`\`json
 {
-  "filesWritten": ["path/to/file1.ts", "path/to/file2.ts"],
-  "summary": "A concise paragraph summarizing what was implemented and how it works"
+  "files": [
+    { "path": "src/feature/foo.ts", "content": "full file content here" },
+    { "path": "src/feature/foo.test.ts", "content": "full file content here" }
+  ],
+  "summary": "One paragraph describing what was implemented and how it works"
 }
-\`\`\`
 
-IMPORTANT: Only return the JSON above. Do NOT include any other text outside the JSON.`
+CRITICAL RULES FOR PATHS:
+- Paths MUST be relative to the repo root (e.g. "src/feature/foo.ts")
+- Do NOT prefix paths with the repo folder name "${input.repoFolderName}/"
+- Do NOT use absolute paths
+- Do NOT create paths starting with "Automation-", "automation-", or any project/folder name
+- WRONG: "${input.repoFolderName}/src/feature/foo.ts"
+- CORRECT: "src/feature/foo.ts"`
+}
+
+function extractJson(raw: string): { files: Array<{ path: string; content: string }>; summary: string } {
+    // Try direct parse first
+    try {
+        return JSON.parse(raw)
+    } catch { /* continue */ }
+
+    // Strip markdown code fences if present
+    const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+    if (fenceMatch) {
+        try { return JSON.parse(fenceMatch[1].trim()) } catch { /* continue */ }
+    }
+
+    // Find first { ... }
+    const objMatch = raw.match(/\{[\s\S]*\}/)
+    if (objMatch) {
+        try { return JSON.parse(objMatch[0]) } catch { /* continue */ }
+    }
+
+    throw new Error(`Could not parse JSON from Bedrock response. Preview: ${raw.slice(0, 300)}`)
+}
+
+function sanitize(name: string): string {
+    return name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
+}
+
+/**
+ * Strips a leading path segment matching the repo folder name.
+ * e.g. "Automation-Back-End/src/foo.ts" → "src/foo.ts"
+ */
+function stripRepoPrefix(filePath: string, repoFolderName: string): string {
+    const normalized = filePath.replace(/\\/g, '/')
+    const prefix = repoFolderName.toLowerCase()
+    const parts = normalized.split('/')
+    if (parts[0].toLowerCase() === prefix) {
+        return parts.slice(1).join('/')
+    }
+    return normalized
 }

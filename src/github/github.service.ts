@@ -195,6 +195,84 @@ export class GithubService {
     })
   }
 
+  /**
+   * Creates a branch and pushes files to it, then opens a PR — all via GitHub API (no local git needed).
+   */
+  static async pushFilesAndCreatePR(
+    repoName: string,
+    branchName: string,
+    files: Array<{ path: string; content: string }>,
+    prTitle: string,
+    prBody: string,
+    baseBranch: string,
+    token: string
+  ): Promise<{ prUrl: string; prNumber: number }> {
+    const headers = this.headers(token)
+
+    // 1. Get base branch SHA
+    const refRes = await fetch(`https://api.github.com/repos/${repoName}/git/refs/heads/${baseBranch}`, { headers })
+    if (!refRes.ok) {
+      const err = await refRes.json() as any
+      throw new Error(`Failed to get base branch ref: ${err.message || refRes.statusText}`)
+    }
+    const baseSha: string = ((await refRes.json()) as any).object.sha
+
+    // 2. Create the feature branch (ignore 422 = already exists)
+    const createBranchRes = await fetch(`https://api.github.com/repos/${repoName}/git/refs`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: baseSha }),
+    })
+    if (!createBranchRes.ok && createBranchRes.status !== 422) {
+      const err = await createBranchRes.json() as any
+      throw new Error(`Failed to create branch: ${err.message || createBranchRes.statusText}`)
+    }
+
+    // 3. Push each file via Contents API
+    for (const file of files) {
+      if (!file.path || !file.content) continue
+      const encodedContent = Buffer.from(file.content, 'utf-8').toString('base64')
+
+      // Check if file already exists to get its SHA (needed for updates)
+      let existingSha: string | undefined
+      const existingRes = await fetch(
+        `https://api.github.com/repos/${repoName}/contents/${file.path}?ref=${branchName}`,
+        { headers }
+      )
+      if (existingRes.ok) {
+        existingSha = ((await existingRes.json()) as any).sha
+      }
+
+      const putRes = await fetch(`https://api.github.com/repos/${repoName}/contents/${file.path}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          message: `feat: add ${file.path}`,
+          content: encodedContent,
+          branch: branchName,
+          ...(existingSha && { sha: existingSha }),
+        }),
+      })
+      if (!putRes.ok) {
+        const err = await putRes.json() as any
+        throw new Error(`Failed to push file ${file.path}: ${err.message || putRes.statusText}`)
+      }
+    }
+
+    // 4. Create Pull Request
+    const prRes = await fetch(`https://api.github.com/repos/${repoName}/pulls`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ title: prTitle, body: prBody, head: branchName, base: baseBranch }),
+    })
+    if (!prRes.ok) {
+      const err = await prRes.json() as any
+      throw new Error(`Failed to create PR: ${err.message || prRes.statusText}`)
+    }
+    const pr = await prRes.json() as any
+    return { prUrl: pr.html_url, prNumber: pr.number }
+  }
+
   static async updateReadme(
     repoName: string,
     branch: string,

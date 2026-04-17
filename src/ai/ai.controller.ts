@@ -67,15 +67,6 @@ export async function regenerateQa(req: Request, res: Response, next: NextFuncti
     }
 }
 
-export async function getPlan(req: Request, res: Response, next: NextFunction) {
-    try {
-        const { featureId } = req.params
-        const result = await Plan.findOne({ feature_id: featureId })
-        res.json(result)
-    } catch (err) {
-        next(err)
-    }
-}
 
 export async function approveQa(req: Request, res: Response, next: NextFunction) {
     try {
@@ -108,8 +99,10 @@ export async function getCodeGeneration(req: Request, res: Response, next: NextF
 
         res.json({
             featureId: codeGen.feature_id,
+            status: codeGen.status,
             sessionId: codeGen.sessionId,
-            result: codeGen.result,
+            result: codeGen.status === 'completed' ? codeGen.result : undefined,
+            error: codeGen.error,
         })
     } catch (err) {
         next(err)
@@ -173,7 +166,11 @@ export async function getPlanController(req: AuthRequest, res: Response, next: N
         const { featureId } = req.params
         const plan = await Plan.findOne({ feature_id: featureId })
         if (!plan) throw new HttpError(404, 'No plan found for this feature')
-        res.json({ plan: plan.content })
+        res.json({
+            status: plan.status,
+            plan: plan.status === 'completed' ? plan.content : undefined,
+            error: plan.error,
+        })
     } catch (err) {
         next(err)
     }
