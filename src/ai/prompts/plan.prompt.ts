@@ -136,6 +136,7 @@ export function buildPlanPrompt(input: {
     testCases: unknown[]
     userStory: string
     optionalPrompt?: string
+    repoContext?: string
 }): string {
     const cappedTestCases = input.testCases.slice(0, 50)
     const truncationNote =
@@ -147,7 +148,11 @@ export function buildPlanPrompt(input: {
         ? `\n\n## ADDITIONAL INSTRUCTIONS FROM USER\n${input.optionalPrompt}`
         : ''
 
-    return `
+    const repoContextSection = input.repoContext
+        ? `\n\n${input.repoContext}\n`
+        : ''
+
+    return `${SYSTEM_CONTEXT}${repoContextSection}
 
 ---
 
@@ -156,10 +161,14 @@ You are a senior software architect working on the AI SDLC Automation Platform d
 Your task is to produce a detailed, actionable development plan for the feature described below.
 
 IMPORTANT CONSTRAINTS:
-- Do NOT run any shell commands.
-- Do NOT modify any files.
-- Do NOT generate actual code — describe what needs to be written, not the code itself.
-- Base ALL recommendations on the folder structure, naming conventions, and coding rules above.
+- You have been provided with ACTUAL FILE CONTENTS from the repository
+- Use the real code, existing patterns, and architecture you see in the repository context
+- Reference specific existing files, functions, and modules when planning modifications
+- Follow the exact coding patterns and conventions observed in the actual codebase
+- Do NOT run any shell commands
+- Do NOT modify any files
+- Do NOT generate actual code — describe what needs to be written, not the code itself
+- Base ALL recommendations on the actual repository context provided above
 
 ---
 

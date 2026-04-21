@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { HttpError } from '../../common/errors/http-error'
+import { pickPrimaryRepo, resolveLocalRepoPath, getRepositoryContext, formatRepositoryContext } from '../../common/utils/local-repo-snapshot'
 import { Feature, FeatureStatusEnum } from '../../feature/feature.model'
 import { Plan } from '../models/plan.model'
 import { CodeGeneration } from '../models/code-generation.model'
@@ -35,30 +36,26 @@ export async function executeFeatureImplementation(featureId: string) {
     const project = await Project.findById(feature.projectId)
     if (!project) throw new HttpError(404, 'Project not found for this feature')
 
-    // Use the linked repo's localPath — prefer BE repo, fall back to any repo
-    const repo = await (Repository as any).findOne({ projectId: project._id, purpose: 'BE' })
-           || await (Repository as any).findOne({ projectId: project._id })
-
-    const repoPath: string = repo?.localPath
-        || `${process.env.LOCAL_REPO_PATH}/${project.name}`
+    const repos = await Repository.find({ projectId: project._id }).lean()
+    const repo = pickPrimaryRepo(repos)
+    const repoPath = resolveLocalRepoPath({ name: project.name as string }, repos)
 
     if (!fs.existsSync(repoPath)) {
         throw new HttpError(400, `Repository directory not found at "${repoPath}". Ensure LOCAL_REPO_PATH is correct or add a repo with a localPath to the project.`)
     }
 
-    // Snapshot top-level structure so the prompt is grounded in reality
-    const repoFolderName = path.basename(repoPath)
-    const topLevelEntries = fs.readdirSync(repoPath)
-        .filter(e => !e.startsWith('.') && e !== 'node_modules' && e !== 'dist')
-        .slice(0, 30)
-        .join(', ')
+    // Get comprehensive repository context with actual file contents
+    console.log(`[CodeGen] Reading repository context from: ${repoPath}`)
+    const context = getRepositoryContext(repoPath)
+    const repoContext = formatRepositoryContext(context)
+    console.log(`[CodeGen] Scanned ${context.totalFilesScanned} files, ${context.totalCharacters} characters`)
 
     // ── Generate code via Bedrock ──────────────────────────────────────────────
     const prompt = buildCodeGenPrompt({
         featureTitle: feature.title as string,
         planContent: plan.content,
-        repoFolderName,
-        topLevelEntries,
+        repoFolderName: context.repoFolderName,
+        repoContext,
     })
 
     let generatedFiles: Array<{ path: string; content: string }> = []
@@ -81,9 +78,9 @@ export async function executeFeatureImplementation(featureId: string) {
     const cleanedFiles: Array<{ path: string; content: string }> = []
     for (const file of generatedFiles) {
         if (!file.path || !file.content) continue
-        // Strip any accidental leading segment that matches the repo folder name
+            // Strip any accidental leading segment that matches the repo folder name
         // e.g. "Automation-Back-End/src/foo.ts" → "src/foo.ts"
-        const cleanPath = stripRepoPrefix(file.path, repoFolderName)
+        const cleanPath = stripRepoPrefix(file.path, context.repoFolderName)
         const fullPath = path.join(repoPath, cleanPath)
         // Safety: ensure the resolved path stays inside repoPath
         if (!fullPath.startsWith(path.resolve(repoPath))) {
@@ -175,7 +172,7 @@ function buildCodeGenPrompt(input: {
     featureTitle: string
     planContent: unknown
     repoFolderName: string
-    topLevelEntries: string
+    repoContext: string
 }): string {
     const planText = typeof input.planContent === 'string'
         ? input.planContent
@@ -189,14 +186,17 @@ ${input.featureTitle}
 ## Approved Implementation Plan
 ${planText}
 
-## Repository Structure
-Repo folder name: ${input.repoFolderName}
-Top-level contents: ${input.topLevelEntries}
+${input.repoContext}
 
 ## Instructions
+- You have been provided with ACTUAL FILE CONTENTS from the repository above
+- Study the existing code patterns, architecture, and conventions carefully
+- Match the exact coding style, naming patterns, and structure you see in existing files
+- Reuse existing utilities, helpers, and patterns where applicable
+- Import from existing modules following the patterns you observe
 - Generate ALL files described in the plan's "Files to Create" section
 - Each file must have complete, working code — no placeholders or TODOs
-- Follow the existing codebase conventions described in the plan
+- Follow the existing codebase conventions you can see in the repository context
 
 ## Required Output Format
 Return ONLY a valid JSON object — no markdown, no explanation, no code fences. Just raw JSON:

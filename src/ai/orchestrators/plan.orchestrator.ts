@@ -1,3 +1,4 @@
+import fs from 'fs'
 import { HttpError } from '../../common/errors/http-error'
 import { Feature, FeatureStatusEnum } from '../../feature/feature.model'
 import { isValidTransition, isValidRejection } from '../../feature/feature.state-machine'
@@ -5,7 +6,8 @@ import { Plan } from '../models/plan.model'
 import { TestCase } from '../models/test-case.model'
 import { buildPlanPrompt } from '../prompts/plan.prompt'
 import * as bedrockClient from '../bedrock.client'
-import { Project } from '../../project/project.model'
+import { Project, Repository } from '../../project/project.model'
+import { resolveLocalRepoPath, getRepositoryContext, formatRepositoryContext } from '../../common/utils/local-repo-snapshot'
 
 interface Actor {
     id: string
@@ -32,10 +34,34 @@ if (feature.status !== FeatureStatusEnum.QA_APPROVED && feature.status !== Featu
     const testCaseDoc = await TestCase.findOne({ feature_id: featureId })
     const testCases = testCaseDoc?.content || []
 
-    // Use fetched test cases from DB, not the ones from request body
+    // Get repository context for better planning
+    let repoContext: string | undefined
+    if (feature.projectId) {
+        try {
+            const project = await Project.findById(feature.projectId)
+            if (project) {
+                const repos = await Repository.find({ projectId: feature.projectId }).lean()
+                const repoPath = resolveLocalRepoPath({ name: project.name as string }, repos)
+
+                if (fs.existsSync(repoPath)) {
+                    console.log(`[Plan] Reading repository context from: ${repoPath}`)
+                    const context = getRepositoryContext(repoPath)
+                    repoContext = formatRepositoryContext(context)
+                    console.log(`[Plan] Scanned ${context.totalFilesScanned} files, ${context.totalCharacters} characters`)
+                } else {
+                    console.warn(`[Plan] Repository path not found: ${repoPath}`)
+                }
+            }
+        } catch (err) {
+            console.warn('[Plan] Could not load repository context:', err)
+        }
+    }
+
+    // Use fetched test cases from DB and repository context
     const prompt = buildPlanPrompt({
         ...input,
-        testCases: testCases
+        testCases: testCases,
+        repoContext
     })
 
     let planText: string
