@@ -41,7 +41,15 @@ export async function executeFeatureImplementation(featureId: string) {
     const repoPath = resolveLocalRepoPath({ name: project.name as string }, repos)
 
     if (!fs.existsSync(repoPath)) {
-        throw new HttpError(400, `Repository directory not found at "${repoPath}". Ensure LOCAL_REPO_PATH is correct or add a repo with a localPath to the project.`)
+        const remoteName = repo?.repo_name as string | undefined
+        if (!remoteName) {
+            throw new HttpError(400, `Repository directory not found at "${repoPath}" and no linked GitHub repo (repo_name) to clone. Add a repository to the project or set LOCAL_REPO_PATH / localPath correctly.`)
+        }
+        try {
+            await GithubService.cloneRepository(remoteName, repoPath, project.githubToken || undefined)
+        } catch (err: any) {
+            throw new HttpError(502, `Failed to clone repository ${remoteName}: ${err?.message || String(err)}`)
+        }
     }
 
     // Get comprehensive repository context with actual file contents
